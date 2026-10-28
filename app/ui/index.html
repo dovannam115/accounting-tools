@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
+<title>Accounting Tools</title>
+<link rel="icon" id="ico" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='54' font-size='86' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%A7%AE%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#262624; --elev:#2F2D29; --card:#34322D; --hover:#3D3B36;
+    --line:#46443F; --line2:#4D4A45;
+    --fg:#F5F4ED; --muted:#A19D93; --dim:#777267;
+    --ember:#c96442; --ember-lit:#d97757;
+    --good:#34d399; --warn:#f59e0b; --bad:#f87171;
+    --console:#1F1E1C; --console-fg:#C9C5B9; --field:#262624;
+  }
+  :root[data-theme="light"]{
+    --bg:#FFFFFF; --elev:#F7F6F2; --card:#FFFFFF; --hover:#F1EFE9;
+    --line:#E6E3DB; --line2:#D6D2C8;
+    --fg:#1F1E1C; --muted:#6B675E; --dim:#9A958A;
+    --ember:#c96442; --ember-lit:#b8583a;
+    --good:#0f8a5f; --warn:#b26a00; --bad:#c2410c;
+    --console:#F7F6F2; --console-fg:#3D3B36; --field:#FFFFFF;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg); color:var(--fg); display:flex;
+       font:14px/1.45 "Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased; letter-spacing:-.006em}
+  ::selection{background:rgba(217,119,87,.30)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  aside{width:240px; flex:0 0 240px; background:var(--elev); border-right:1px solid var(--line);
+        display:flex; flex-direction:column; padding:16px 12px; gap:16px; user-select:none}
+  .brand{padding:2px 6px 0; display:flex; align-items:center; gap:10px}
+  .brand img{width:34px; height:34px; border-radius:9px}
+  .brand b{display:block; font-size:13px; font-weight:700; letter-spacing:.02em; white-space:nowrap}
+  .brand span{display:block; color:var(--dim); font-size:11px; letter-spacing:.06em; margin-top:1px}
+  nav{display:flex; flex-direction:column; gap:2px; overflow:auto}
+  .grp-h{font-size:10.5px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; padding:12px 10px 4px}
+  .grp-h:first-child{padding-top:2px}
+  nav button{display:flex; align-items:center; justify-content:space-between; gap:8px; background:none; border:0;
+             color:var(--muted); text-align:left; cursor:pointer; padding:8px 10px; border-radius:9px;
+             font:inherit; font-size:13.5px}
+  nav button:hover{background:var(--hover); color:var(--fg)}
+  nav button.on{background:var(--card); color:var(--fg); box-shadow:0 0 0 1px var(--line) inset}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--good);display:none;flex:0 0 7px}
+  .dot.run{display:block;background:var(--ember);animation:pulse 1.2s ease-in-out infinite}
+  .dot.ok{display:block;background:var(--good)}
+  .dot.bad{display:block;background:var(--bad)}
+  .dot.new{display:block;background:var(--good)}
+  @keyframes pulse{50%{opacity:.35}}
+  .side-end{margin-top:auto; display:flex; flex-direction:column; gap:6px; padding:0 2px}
+  .side-end .row{display:flex; gap:6px}
+  .ver{color:var(--dim); font-size:11.5px; padding:2px 8px 0}
+
+  main{flex:1; min-width:0; display:flex; flex-direction:column}
+  header{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px 22px 12px;
+         border-bottom:1px solid var(--line); min-height:58px}
+  header h1{font-size:17px; margin:0; font-weight:650; white-space:nowrap}
+  header .sp{flex:1}
+  .wrap{flex:1; overflow:auto; padding:18px 22px 26px}
+  .cols{display:grid; grid-template-columns:minmax(300px,380px) minmax(0,1fr); gap:14px; align-items:start}
+  @media (max-width:980px){.cols{grid-template-columns:1fr}}
+  .stack{display:flex; flex-direction:column; gap:14px; min-width:0}
+
+  button{font:inherit; cursor:pointer; white-space:nowrap; transition:background .18s,border-color .18s,color .18s,opacity .18s}
+  button:active:not(:disabled){transform:scale(.985)}
+  .btn{background:var(--card); color:var(--fg); border:1px solid var(--line); padding:8px 13px; border-radius:9px}
+  .btn:hover:not(:disabled){background:var(--hover); border-color:var(--line2)}
+  .btn.pri{background:var(--ember); border-color:var(--ember); color:#fff}
+  .btn.pri:hover:not(:disabled){background:var(--ember-lit); border-color:var(--ember-lit)}
+  .btn.sm{padding:5px 10px; border-radius:8px; font-size:12.5px}
+  .btn.gho{background:transparent}
+  .btn.wide{width:100%}
+  .btn:disabled{opacity:.42; cursor:default}
+  .link{background:none; border:0; color:var(--ember-lit); padding:0; font-size:12.5px; cursor:pointer}
+  .link:hover{text-decoration:underline}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:15px 16px; min-width:0}
+  .card h2{margin:0 0 10px; font-size:13.5px; font-weight:650}
+  .no{font-size:10.5px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; margin:14px 0 6px}
+  .no:first-child{margin-top:0}
+  .muted{color:var(--muted); font-size:12.5px}
+  .hint{color:var(--dim); font-size:12px; margin-top:6px}
+  .hide{display:none !important}
+
+  .drop{border:1.5px dashed var(--line2); border-radius:11px; padding:14px; text-align:center; color:var(--muted);
+        font-size:13px; cursor:pointer}
+  .drop:hover,.drop.on{border-color:var(--ember); color:var(--fg); background:rgba(201,100,66,.06)}
+  .chips{display:flex; flex-direction:column; gap:6px; margin-top:8px}
+  .chip{display:flex; align-items:center; gap:8px; background:var(--elev); border:1px solid var(--line); border-radius:9px;
+        padding:7px 10px; font-size:12.5px; min-width:0}
+  .chip span{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .chip i{font-style:normal; color:var(--dim)}
+  .chip button{background:none; border:0; color:var(--dim); font-size:15px; line-height:1; padding:0 2px}
+  .chip button:hover{color:var(--bad)}
+
+  .inp,select,textarea{background:var(--field); border:1px solid var(--line); color:var(--fg); border-radius:9px;
+        padding:8px 11px; font:inherit; font-size:13px; width:100%}
+  textarea{resize:vertical; font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:12.5px}
+  .inp:focus,select:focus,textarea:focus{outline:none; border-color:var(--line2)}
+  .seg{display:flex; background:var(--elev); border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px}
+  .seg button{flex:1; background:none; border:0; color:var(--muted); padding:6px 8px; border-radius:7px; font-size:12.5px}
+  .seg button.on{background:var(--card); color:var(--fg); box-shadow:0 0 0 1px var(--line) inset}
+  label.ck{display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12.5px; cursor:pointer; margin:4px 0}
+  input[type=checkbox],input[type=radio]{accent-color:var(--ember); width:14px; height:14px; cursor:pointer; margin:0}
+  .act{margin-top:16px; display:flex; gap:8px}
+  .act .btn.pri{flex:1}
+
+  .status{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); flex-wrap:wrap}
+  .status .dot{display:block}
+  .note{border-radius:10px; padding:9px 12px; font-size:12.5px; margin-top:10px}
+  .note.ok{background:rgba(52,211,153,.10); color:var(--good)}
+  .note.warn{background:rgba(245,158,11,.11); color:var(--warn)}
+  .note.bad{background:rgba(248,113,113,.11); color:var(--bad)}
+  .note ul{margin:4px 0 0; padding-left:18px}
+  .code{display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:rgba(201,100,66,.12);
+        border:1px solid rgba(201,100,66,.4); border-radius:11px; padding:11px 13px; margin-top:8px}
+  .code b{font:600 18px/1 ui-monospace,Consolas,monospace; letter-spacing:.12em; color:var(--fg)}
+
+  .empty{color:var(--muted); font-size:13px; padding:28px 6px; text-align:center}
+  .runhead{display:flex; align-items:center; gap:10px}
+  .runhead b{font-size:13.5px}
+  .runhead .sp{flex:1}
+  .bar{height:6px; background:var(--elev); border-radius:6px; overflow:hidden; margin-top:12px}
+  .bar div{height:100%; background:var(--ember); width:0; transition:width .4s}
+  .barlbl{display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-top:6px; gap:10px}
+  .barlbl span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .spin{width:13px;height:13px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--ember);animation:sp .7s linear infinite;flex:0 0 13px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  pre{margin:8px 0 0; background:var(--console); color:var(--console-fg); border:1px solid var(--line); border-radius:11px;
+      padding:11px 13px; max-height:34vh; overflow:auto; font:12.2px/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace;
+      white-space:pre-wrap; word-break:break-word}
+  details{margin-top:12px}
+  summary{cursor:pointer; color:var(--muted); font-size:12.5px; user-select:none}
+  summary:hover{color:var(--fg)}
+
+  .stats{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px}
+  .stat{flex:1 1 120px; background:var(--elev); border:1px solid var(--line); border-radius:11px; padding:10px 13px; min-width:0}
+  .stat div{font-size:11px; color:var(--dim); letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .stat b{display:block; font-size:21px; font-weight:650; margin-top:2px; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .stat b.good{color:var(--good)} .stat b.warn{color:var(--warn)} .stat b.bad{color:var(--bad)}
+  .files{display:flex; flex-direction:column; gap:8px; margin-top:12px}
+  .file{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .file .btn.pri{flex:1 1 220px; overflow:hidden; text-overflow:ellipsis; text-align:left}
+  .caption{color:var(--muted); font-size:12px; margin-top:10px}
+
+  .tbl{margin-top:16px}
+  .tblh{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px}
+  .tblh h3{margin:0; font-size:12.5px; font-weight:650; margin-right:6px}
+  .views{display:flex; gap:4px; flex-wrap:wrap}
+  .views button{background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px; padding:3px 10px; font-size:12px}
+  .views button.on{background:var(--ember); border-color:var(--ember); color:#fff}
+  .tw{overflow:auto; max-height:56vh; border:1px solid var(--line); border-radius:10px}
+  table{border-collapse:collapse; width:100%; font-size:12.5px}
+  th{position:sticky; top:0; background:var(--elev); text-align:left; font-size:10.5px; font-weight:600; color:var(--dim);
+     text-transform:uppercase; letter-spacing:.06em; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; z-index:1}
+  td{padding:6px 10px; border-bottom:1px solid var(--line); white-space:nowrap; max-width:420px; overflow:hidden; text-overflow:ellipsis}
+  td.wrap{white-space:normal; min-width:380px; max-width:620px}
+  td.n{text-align:right; font-variant-numeric:tabular-nums}
+  tbody tr:hover td{background:var(--hover)}
+  tr:last-child td{border-bottom:0}
+  .more{color:var(--dim); font-size:12px; margin-top:6px}
+
+  .colchk td{white-space:normal}
+  .big{font-size:22px; font-weight:650}
+  .notes{background:var(--console); border:1px solid var(--line); border-radius:11px; padding:11px 13px; color:var(--console-fg);
+         font:12.5px/1.6 ui-monospace,Consolas,monospace; white-space:pre-wrap; max-height:34vh; overflow:auto}
+  #fabbox{margin-bottom:14px} #fabbox:empty{display:none} #fabbox:has(.veil){margin:0}
+  .veil{position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:30; padding:16px}
+  .modal{background:var(--card); border:1px solid var(--line); border-radius:14px; width:min(560px,100%); padding:18px 20px;
+         box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  .modal h2{margin:0 0 10px; font-size:15px}
+  .toast{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg);
+         padding:9px 16px; border-radius:10px; font-size:13px; z-index:50; box-shadow:0 8px 30px rgba(0,0,0,.25)}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><img id="logo" alt=""><div><b>Accounting Tools</b><span>PVI Digital</span></div></div>
+  <nav id="nav"></nav>
+  <div class="side-end">
+    <div class="row">
+      <button class="btn sm gho" style="flex:1" onclick="openOut()" title="Open the folder with every result file">Output</button>
+      <button class="btn sm gho" style="flex:1" id="themeBtn" onclick="toggleTheme()">Light mode</button>
+    </div>
+    <div class="seg" id="langSeg"><button data-l="vi" onclick="setLang('vi')">Tiếng Việt</button><button data-l="en" onclick="setLang('en')">English</button></div>
+    <button class="btn sm gho" onclick="quit()">Quit</button>
+    <div class="ver" id="ver">v...</div>
+  </div>
+</aside>
+
+<main>
+  <header><h1 id="title"></h1><div class="sp"></div><div id="hstatus" class="status"></div></header>
+  <div class="wrap" id="view"></div>
+</main>
+<input type="file" id="fpick" class="hide">
+
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const $ = (id) => document.getElementById(id);
+$("logo").src = $("ico").href;
+
+const NAV = [
+  ["Reports", [["debt","Debt report 1311"]]],
+  ["Fix & offset", [["pias","PIAS fix for other PVI units"],["offset","Offset with the 5111 ledger"]]],
+  ["", [["upd","Update"]]],
+];
+const TITLES = {}; NAV.forEach(([,it]) => it.forEach(([k,t]) => TITLES[k] = t));
+const S = {};            // per-tool form state, kept while switching tools
+let CUR = "", ENV = null, VER = "", UPDINFO = null;
+const JOBS = {};         // tool -> last job view {state, lines, ...}
+let dead = 0;
+
+// ------------------------------------------------------------ helpers
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toast(msg){ const d = document.createElement("div"); d.className = "toast"; d.textContent = msg;
+  document.body.appendChild(d); setTimeout(() => d.remove(), 2600); }
+async function api(path, body){
+  const o = {headers:{"X-Token":T, "Content-Type":"application/json"}};
+  if(body !== undefined){ o.method = "POST"; o.body = JSON.stringify(body); }
+  let r;
+  try { r = await fetch(path, o); dead = 0; }
+  catch(e){ if(++dead >= 3) gone(); return {error:"offline"}; }
+  if(r.status === 403){ gone("This window is from an older start. Close it and open the tool again."); return {error:"token"}; }
+  try { return await r.json(); } catch(e){ return {error:"bad reply"}; }
+}
+function gone(msg){ document.body.innerHTML = '<div class="empty" style="margin:auto">' + esc(msg || "The tool has closed. Open it again from the shortcut.") + '</div>'; }
+function fmt(v){
+  if(v === null || v === undefined) return "";
+  if(typeof v === "number") return Number.isInteger(v) ? v.toLocaleString("vi-VN") : v.toLocaleString("vi-VN", {maximumFractionDigits:2});
+  return String(v);
+}
+function dl(path){ location.href = "/api/file?t=" + T + "&path=" + encodeURIComponent(path); }
+async function openPath(path, select){ const r = await api("/api/open", {path, select:!!select}); if(r.error) toast(r.error); }
+async function openUrl(url){ const r = await api("/api/open", {url}); if(r.error) toast(r.error); }
+function openOut(){ api("/api/open", {what:"output"}); }
+function st(tool){ return S[tool] || (S[tool] = {}); }
+
+// ------------------------------------------------------------ language: Tiếng Việt / English
+// The page is written in English. With Tiếng Việt on (the default), every text is swapped right after it is drawn:
+// VI = exact text, VI_RE = text with numbers or names inside. Table cells (td), logs (pre) and file
+// chips are data and stay as they are (a td with class "t" is a label and is translated).
+let LANG = "vi"; try { LANG = localStorage.getItem("acct_lang") === "en" ? "en" : "vi"; } catch(e){}
+const VI = {
+  // shell
+  "Output": "Kết quả", "Light mode": "Nền sáng", "Dark mode": "Nền tối", "Quit": "Thoát",
+  "Open the folder with every result file": "Mở thư mục chứa mọi file kết quả",
+  "Reports": "Báo cáo", "Fix & offset": "Sửa file và đối trừ", "Update": "Cập nhật",
+  "Debt report 1311": "Báo cáo công nợ 1311", "PIAS fix for other PVI units": "Sửa file thu PIAS (PVI khác)",
+  "Offset 5111": "Đối trừ 5111", "Offset with the 5111 ledger": "Đối trừ với sổ 5111",
+  "This window is from an older start. Close it and open the tool again.": "Cửa sổ này thuộc lần mở trước. Đóng nó rồi mở lại tool.",
+  "The tool has closed. Open it again from the shortcut.": "Tool đã đóng. Mở lại từ shortcut.",
+  "Drop files here or click to choose": "Thả file vào đây hoặc bấm để chọn",
+  "Drop a file here or click to choose": "Thả một file vào đây hoặc bấm để chọn",
+  "uploading...": "đang tải lên...", "Remove": "Bỏ file này",
+  "Stopped": "Đã dừng", "Stopped.": "Đã dừng.",
+  "Results show here.": "Kết quả hiện ở đây.", "Stop": "Dừng", "Log": "Nhật ký", "The run failed.": "Lượt chạy bị lỗi.",
+  "Technical detail": "Chi tiết kỹ thuật", "Details": "Chi tiết", "Open": "Mở", "Folder": "Thư mục",
+  "Save a copy to Downloads": "Lưu một bản vào thư mục Downloads", "Show the file in its folder": "Mở thư mục chứa file",
+  "No rows here.": "Không có dòng nào.", "Type the date as dd/mm/yyyy": "Gõ ngày theo dạng dd/mm/yyyy",
+  "Reading the files...": "Đang đọc file...", "File": "File", "Type": "Loại", "Run": "Chạy", "Done": "Xong",
+  "Result": "Kết quả", "Files": "Số file",
+  // settings files
+  "Open in Excel": "Mở bằng Excel", "Show in folder": "Mở thư mục", "Download a copy": "Tải một bản",
+  "Replace with a file...": "Thay bằng file khác...", "edited on this PC": "đã sửa trên máy này", "Missing": "Không có file",
+  "Wait for the running tools to finish.": "Chờ các tool đang chạy xong đã.",
+  "This is not an .xlsx file.": "File này không phải .xlsx.",
+  "Cannot open this file as a workbook.": "Không mở được file này như một file Excel.",
+  "The file is open on the server, try again in a minute.": "File đang mở trong Excel, đóng nó rồi thử lại.",
+  // update
+  "Checking...": "Đang kiểm tra...", "Updates are not set up in this copy (app\\update.json has no repo).": "Bản này chưa cài nguồn cập nhật (app\\update.json chưa có repo).",
+  "This is the latest version.": "Đây là bản mới nhất.", "Version in use": "Bản đang dùng", "Check for updates": "Kiểm tra bản mới",
+  "Download and install": "Tải và cài bản mới", "Restart the tool": "Khởi động lại tool", "What is new": "Có gì mới",
+  "Install from a zip file": "Cài từ file zip", "When this PC cannot reach GitHub.": "Khi máy không vào được GitHub.", "Install": "Cài",
+  "Restarting...": "Đang khởi động lại...", "The tool is closed.": "Tool đã đóng.", "A tool is still running. Quit and stop it?": "Một tool vẫn đang chạy. Thoát và dừng nó?",
+  "Your edited config.xlsx, Unit_Codes.xlsx and Offset_Rates.xlsx are kept when updating.": "Khi cập nhật, các file config.xlsx, Unit_Codes.xlsx và Offset_Rates.xlsx đã sửa trên máy này được giữ nguyên.",
+  // errors from the server and the runs
+  "Uploaded file is gone, add it again.": "File đã tải lên không còn, thêm lại file.", "This tool is already running.": "Tool này đang chạy.",
+  "Cannot read these files.": "Không đọc được các file này.",
+  // Debt report 1311
+  "Turns the PIAS exports of a period into the 1311 debt report, then the clean invoice file, the letters to customers and the reconciliation for the business units.":
+    "Từ file xuất PIAS của kỳ dựng báo cáo công nợ 1311, rồi file hóa đơn sạch, thư gửi khách hàng và bản đối chiếu gửi các phòng kinh doanh.",
+  "1 · PIAS exports": "1 · File xuất từ PIAS", "2 · Outputs": "2 · Cần xuất gì",
+  "Drop the files of the period here or click to choose": "Thả các file của kỳ vào đây hoặc bấm để chọn",
+  "The 5 BCPBHTT files (only the 0051 one for a 0051 only run). Add List hóa đơn and BK_HDVAT (exported from 01/01 to the closing date) for the invoice outputs. Report already built? Add that BC công nợ file instead of the BCPBHTT files.":
+    "5 file BCPBHTT (chạy Chỉ 0051 thì chỉ cần file 0051). Cần file hóa đơn thì thêm List hóa đơn và BK_HDVAT (xuất từ 01/01 đến ngày chốt). Đã dựng báo cáo rồi thì thêm file BC công nợ đó thay cho các file BCPBHTT.",
+  "BCPBHTT export": "File BCPBHTT", "BK_HDVAT (invoice amounts)": "BK_HDVAT (tiền hóa đơn)", "List hóa đơn": "List hóa đơn",
+  "BC công nợ already built": "BC công nợ đã dựng", "Not recognised, ignored": "Không nhận ra, bỏ qua",
+  "Account": "Tài khoản", "Accounts": "Tài khoản",
+  "Full report (13111 + 0051)": "Đầy đủ (13111 + 0051)", "0051 only": "Chỉ 0051", "13111 only": "Chỉ 13111",
+  "0051 only needs just the 0051 BCPBHTT file and takes well under a minute.": "Chỉ 0051 thì chỉ cần file BCPBHTT của 0051, chạy chưa tới một phút.",
+  "No BCPBHTT file: the added BC công nợ file is used as the report.": "Không có file BCPBHTT: dùng file BC công nợ đã thêm làm báo cáo.",
+  "Debt report 1311 (BC công nợ)": "Báo cáo công nợ 1311",
+  "Re-check it in Excel": "Kiểm tra lại bằng Excel",
+  "Excel recalculates every formula, then the totals are compared with the exports. Adds about a minute.": "Excel tính lại mọi công thức rồi so tổng với file xuất PIAS. Mất thêm khoảng một phút.",
+  "Excel is not on this PC, so the report cannot be re-checked.": "Máy này không có Excel nên không kiểm tra lại được báo cáo.",
+  "Clean invoices (Hóa đơn sạch)": "Hóa đơn sạch", "Letters to customers (Thư gửi KH)": "Thư gửi khách hàng",
+  "Reconciliation for business units (Đối chiếu P.KD)": "Đối chiếu P.KD",
+  "Needs BK_HDVAT and List hóa đơn. Takes about 3 minutes.": "Cần BK_HDVAT và List hóa đơn. Mất khoảng 3 phút.",
+  "Needs List hóa đơn and account 13111.": "Cần List hóa đơn và tài khoản 13111.",
+  "Two files: the confirmation, and the statement attached to it.": "Ra 2 file: bản xác nhận và bảng kê đính kèm.",
+  "Upload the BCPBHTT files, or a BC công nợ file that is already built.": "Thêm các file BCPBHTT, hoặc file BC công nợ đã dựng.",
+  "Letters to customers use account 13111, so they cannot run with 0051 only.": "Thư gửi khách hàng lấy tài khoản 13111 nên không chạy được khi chọn Chỉ 0051.",
+  "Clean invoices needs both BK_HDVAT and List hóa đơn.": "Hóa đơn sạch cần cả BK_HDVAT và List hóa đơn.",
+  "Letters to customers needs List hóa đơn.": "Thư gửi khách hàng cần List hóa đơn.",
+  "Upload only one BK_HDVAT file.": "Chỉ thêm một file BK_HDVAT.", "Upload only one List hóa đơn file.": "Chỉ thêm một file List hóa đơn.",
+  "Upload only one BC công nợ file.": "Chỉ thêm một file BC công nợ.",
+  "Settings file (config.xlsx)": "File cài đặt (config.xlsx)",
+  "Rules for business groups, merged customers, business units and the people who sign the letters. Open it in Excel, edit, save and close: the next run uses it.":
+    "Quy tắc nhóm nghiệp vụ, gộp khách hàng, phòng kinh doanh và người ký thư. Mở bằng Excel, sửa, lưu rồi đóng file: lần chạy sau sẽ dùng bản này.",
+  "config.xlsx replaced. The next run uses it.": "Đã thay config.xlsx. Lần chạy sau sẽ dùng bản này.",
+  "Excel re-check": "Excel kiểm tra lại", "Passed": "Khớp", "Differences": "Có lệch",
+  "The Excel re-check found differences. Read the run log before sending the report.": "Excel kiểm tra lại thấy lệch. Đọc nhật ký chạy trước khi gửi báo cáo.",
+  "Excel is not on this PC, so the report was not re-checked in Excel.": "Máy này không có Excel nên báo cáo chưa được kiểm tra lại bằng Excel.",
+  "Add the PIAS exports of the period, tick the outputs, then Run.": "Thêm file xuất PIAS của kỳ, tick những gì cần xuất rồi bấm Chạy.",
+  // PIAS fix
+  "Add the PIAS receipt file (ctXXXX) and the PVI khác list from Ms. Kiều. Every matched row gets Tk có 33664, the unit code in Khách có and P/Ban có, Cán bộ có cleared, and Tk có highlighted yellow.":
+    "Thêm file thu PIAS (ctXXXX) và danh sách PVI khác của chị Kiều. Mỗi dòng khớp được sửa Tk có thành 33664, điền mã đơn vị vào Khách có và P/Ban có, xóa Cán bộ có, tô vàng ô Tk có.",
+  "PIAS file(s) and the PVI khác list": "File thu PIAS và danh sách PVI khác",
+  "The type of each file is read from its headers. Several versions of the list? Add them all, the one that matches the most rows is used.":
+    "Loại file tự nhận theo tiêu đề cột. Có nhiều bản danh sách thì thêm hết, bản khớp nhiều dòng nhất sẽ được dùng.",
+  "PIAS receipt file": "File thu PIAS", "PVI khác list": "Danh sách PVI khác",
+  "Only when the result looks wrong": "Chỉ dùng khi kết quả có vẻ sai", "Sheet of the list": "Sheet của danh sách",
+  "Leave empty, the sheet is detected.": "Để trống thì tool tự dò sheet.",
+  "Only these days of the list": "Chỉ lấy các ngày này trong danh sách", "Leave empty to use every day that matches.": "Để trống thì lấy mọi ngày khớp.",
+  "Fix PIAS file": "Sửa file PIAS", "Add the PIAS file and the list from Ms. Kiều.": "Thêm file PIAS và danh sách của chị Kiều.",
+  "Add the PVI khác list from Ms. Kiều as well.": "Thêm danh sách PVI khác của chị Kiều.", "No PIAS receipt file among these files.": "Không có file thu PIAS trong các file này.",
+  "Unit codes (Unit_Codes.xlsx)": "Mã đơn vị (Unit_Codes.xlsx)",
+  "Unit name to code, for example PVI Hà Nội → 00.18010000. When the result says a unit has no code, open the file, add a row for it, save and close.":
+    "Bảng tên đơn vị sang mã, ví dụ PVI Hà Nội → 00.18010000. Kết quả báo đơn vị chưa có mã thì mở file, thêm một dòng, lưu rồi đóng.",
+  "Unit_Codes.xlsx replaced. Run again to use it.": "Đã thay Unit_Codes.xlsx. Chạy lại để dùng.",
+  "No PIAS file among the uploads (the columns 'Diễn giải' and 'Tk có' were not found).": "Không có file thu PIAS trong các file đã thêm (không thấy cột 'Diễn giải' và 'Tk có').",
+  "Upload the PVI khác list from Ms. Kiều as well.": "Thêm danh sách PVI khác của chị Kiều.",
+  "Expected 2 columns: unit name, then a code like 00.18520000, from row 2 down.": "Cần 2 cột: tên đơn vị, rồi mã dạng 00.18520000, bắt đầu từ dòng 2.",
+  "Cannot read the options. Sheet is a sheet name; days look like 08/09,09/09.": "Không đọc được tùy chọn. Sheet là tên sheet; ngày ghi dạng 08/09,09/09.",
+  "Rows fixed": "Dòng đã sửa", "To check by hand": "Cần soát tay", "List items not found in PIAS": "Món không thấy trong PIAS",
+  "No row needed fixing, so no file was written.": "Không có dòng nào cần sửa nên không ghi file.",
+  "What the tool reported": "Tool báo gì",
+  // Offset 5111
+  "Add the 5111 ledger and the detail file, then Run the offset.": "Thêm sổ 5111 và file chi tiết đơn rồi bấm Chạy đối trừ.",
+  "Ledger 5111": "Sổ 5111", "Detail file": "File chi tiết đơn", "Period": "Kỳ", "Cut-off date": "Ngày chốt",
+  "Payment period on the BBDS sheet": "Kỳ thanh toán in trên BBDS", "Run the offset": "Chạy đối trừ",
+  "Empty = from the files.": "Để trống thì lấy theo file.",
+  "Invoices off": "Hóa đơn lệch", "Policy keys off": "Khoá đơn lệch", "Premium not in the ledger": "Phí chưa có trong sổ",
+  "Invoice": "Hóa đơn", "Detail": "Chi tiết", "Ledger": "Sổ 5111", "Difference": "Lệch",
+  "Upload the 5111 ledger and the detail file.": "Thêm sổ 5111 và file chi tiết đơn."
+};
+const VI_RE = [
+  [/^Download (.+)$/, "Tải về $1"],
+  [/^Done in (\d+) min (\d+) s$/, "Xong trong $1 phút $2 giây"], [/^Done in (\d+) s$/, "Xong trong $1 giây"],
+  [/^(\d+) min (\d+) s$/, "$1 phút $2 giây"], [/^(\d+) s$/, "$1 giây"],
+  [/^Showing (\d+) of ([\d,.]+) rows\. The file has all of them\.$/, "Đang hiện $1 trên $2 dòng. File tải về có đủ."],
+  [/^(\d+) warnings?$/, "$1 cảnh báo"], [/^Separate files \((\d+)\)$/, "File lẻ ($1)"],
+  [/^Cannot check: (.*)$/, "Không kiểm tra được: $1"], [/^Version (.+) is available\.$/, "Đã có bản $1."],
+  [/^Unexpected error: (.*)$/, "Lỗi không lường trước: $1"], [/^The run ended with code (.+)\.$/, "Lượt chạy kết thúc với mã $1."],
+  [/^Bad date: (.*)$/, "Ngày không hợp lệ: $1"],
+  [/^Last changed (.+)$/, "Sửa lần cuối $1"],
+  [/^Missing the BCPBHTT file of account\(s\): (.+)\.$/, "Thiếu file BCPBHTT của tài khoản: $1."],
+  [/^Ignored for this run: account\(s\) (.+)\.$/, "Lần chạy này bỏ qua tài khoản $1."],
+  [/^Reading the ledger, (.+) rows$/, "Đang đọc sổ, $1 dòng"],
+  [/^(.+) key\(s\) without an invoice number, (.+) of premium: sheet Hóa đơn chưa gán\.$/, "$1 khoá chưa gán được hóa đơn, phí $2: xem sheet Hóa đơn chưa gán."],
+  [/^Old copy kept in (.+)$/, "Bản cũ lưu ở $1"]
+];
+const ORIG = new WeakMap();
+function tr(s){
+  if(LANG !== "vi" || !s) return s;
+  const k = s.trim(); if(!k) return s;
+  let v = VI[k];
+  if(v === undefined) for(const [re, to] of VI_RE){ if(re.test(k)){ v = k.replace(re, to); break; } }
+  return v === undefined ? s : s.replace(k, v);
+}
+const KEEP = "td:not(.t),pre,code,textarea,.chip span,.keep";
+function trNode(n){
+  const p = n.parentElement; if(!p || p.closest(KEEP)) return;
+  const v = tr(n.nodeValue);
+  if(v !== n.nodeValue){ if(!ORIG.has(n)) ORIG.set(n, n.nodeValue); n.nodeValue = v; }
+}
+function trAttrs(el){
+  if(el.closest && el.closest(KEEP)) return;
+  for(const a of ["placeholder", "title"]){
+    const v0 = el.getAttribute(a); if(!v0) continue;
+    const v = tr(v0);
+    if(v !== v0){ if(!el.hasAttribute("data-en-" + a)) el.setAttribute("data-en-" + a, v0); el.setAttribute(a, v); }
+  }
+}
+function localize(root){
+  if(LANG !== "vi" || !root) return;
+  if(root.nodeType === 3) return trNode(root);
+  if(root.nodeType !== 1) return;
+  trAttrs(root); root.querySelectorAll("[placeholder],[title]").forEach(trAttrs);
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+  while((n = w.nextNode())) trNode(n);
+}
+function unlocalize(){
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
+  while((n = w.nextNode())) if(ORIG.has(n)){ n.nodeValue = ORIG.get(n); ORIG.delete(n); }
+  document.querySelectorAll("[data-en-placeholder],[data-en-title]").forEach(el => {
+    for(const a of ["placeholder", "title"]){ const v = el.getAttribute("data-en-" + a); if(v !== null){ el.setAttribute(a, v); el.removeAttribute("data-en-" + a); } }
+  });
+}
+new MutationObserver(ms => { if(LANG !== "vi") return; for(const m of ms) m.addedNodes.forEach(localize); })
+  .observe(document.body, {childList:true, subtree:true});
+function setLang(l){
+  LANG = l === "vi" ? "vi" : "en";
+  try { localStorage.setItem("acct_lang", LANG); } catch(e){}
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("#langSeg button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
+  if(LANG === "vi") localize(document.body); else unlocalize();
+}
+
+// ------------------------------------------------------------ nav + theme
+function drawNav(){
+  let h = "";
+  NAV.forEach(([g, items]) => {
+    if(g) h += '<div class="grp-h">' + esc(g) + '</div>'; else h += '<div class="grp-h">&nbsp;</div>';
+    items.forEach(([k, t]) => {
+      const j = JOBS[k]; let dot = "";
+      if(j && j.state === "running") dot = "run";
+      else if(k === "upd" && UPDINFO && UPDINFO.available) dot = "new";
+      h += '<button id="nav-' + k + '" class="' + (k === CUR ? "on" : "") + '" onclick="go(\'' + k + '\')">' +
+           esc(t) + '<span class="dot ' + dot + '"></span></button>';
+    });
+  });
+  $("nav").innerHTML = h;
+}
+function setTheme(t){ document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "Light mode" : "Dark mode";
+  try { localStorage.setItem("acct_theme", t); } catch(e){} }
+function toggleTheme(){ setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"); }
+try { setTheme(localStorage.getItem("acct_theme") || "dark"); } catch(e){ setTheme("dark"); }
+
+function go(k){
+  CUR = k; try { localStorage.setItem("acct_tool", k); } catch(e){}
+  $("title").textContent = TITLES[k] || "";
+  drawNav(); draw();
+}
+function draw(){
+  const f = VIEWS[CUR]; $("hstatus").innerHTML = "";
+  $("view").innerHTML = f ? f() : "";
+  if(HEAD[CUR]) HEAD[CUR]();
+  if(AFTER[CUR]) AFTER[CUR]();
+  drawRun(CUR);
+}
+
+// ------------------------------------------------------------ file fields
+// field(tool, key, accept, multi): a drop area + chosen files; files upload at once, the run sends their ids
+function field(tool, key, accept, multi, label){
+  const s = st(tool), files = s[key] || [];
+  let h = '<div class="drop" ondragover="event.preventDefault();this.classList.add(\'on\')" ondragleave="this.classList.remove(\'on\')" ' +
+          'ondrop="dropFiles(event,\'' + tool + '\',\'' + key + '\',' + (multi ? 1 : 0) + ')" ' +
+          'onclick="pick(\'' + tool + '\',\'' + key + '\',\'' + accept + '\',' + (multi ? 1 : 0) + ')">' +
+          esc(label || (multi ? "Drop files here or click to choose" : "Drop a file here or click to choose")) + '</div>';
+  if(files.length){
+    h += '<div class="chips">' + files.map((f, i) => '<div class="chip"><span title="' + esc(f.name) + '">' + esc(f.name) +
+         '</span><i>' + (f.up ? "uploading..." : Math.max(1, Math.round(f.size/1024)).toLocaleString() + " KB") +
+         '</i><button title="Remove" onclick="unpick(\'' + tool + '\',\'' + key + '\',' + i + ')">×</button></div>').join("") + '</div>';
+  }
+  return h;
+}
+function pick(tool, key, accept, multi){
+  const fp = $("fpick"); fp.value = ""; fp.accept = accept; fp.multiple = !!multi;
+  fp.onchange = () => addFiles(tool, key, [...fp.files], multi);
+  fp.click();
+}
+function dropFiles(ev, tool, key, multi){ ev.preventDefault(); ev.currentTarget.classList.remove("on");
+  addFiles(tool, key, [...ev.dataTransfer.files], multi); }
+async function addFiles(tool, key, list, multi){
+  if(!list.length) return;
+  const s = st(tool);
+  if(!multi){ list = list.slice(0, 1); s[key] = []; }
+  s[key] = s[key] || [];
+  const items = list.map(f => ({name:f.name, size:f.size, up:true}));
+  s[key].push(...items);
+  if(CUR === tool) draw();
+  for(let i = 0; i < list.length; i++){
+    let r;
+    try {
+      const res = await fetch("/api/upload?t=" + T + "&name=" + encodeURIComponent(list[i].name), {method:"POST", body:list[i]});
+      r = await res.json();
+    } catch(e){ r = {error:"upload failed"}; }
+    if(r.error){ toast(list[i].name + ": " + tr(r.error)); s[key] = s[key].filter(x => x !== items[i]); }
+    else { items[i].id = r.id; items[i].up = false; }
+  }
+  if(ONFILE[tool]) await ONFILE[tool](key);
+  if(CUR === tool) draw();
+}
+function unpick(tool, key, i){ const s = st(tool); s[key].splice(i, 1); if(ONFILE[tool]) ONFILE[tool](key, true); draw(); }
+function ready(tool, key){ const f = st(tool)[key] || []; return f.length && f.every(x => x.id); }
+function ids(tool, key){ return (st(tool)[key] || []).map(x => x.id); }
+function seg(tool, key, opts, onchg){
+  const v = st(tool)[key];
+  return '<div class="seg">' + opts.map(([k, t]) => '<button class="' + (v === k ? "on" : "") + '" onclick="S[\'' + tool +
+         '\'][\'' + key + '\']=\'' + k + '\';' + (onchg || "") + 'draw()">' + esc(t) + '</button>').join("") + '</div>';
+}
+
+// ------------------------------------------------------------ run + result panel
+async function run(tool, args, label){
+  const r = await api("/api/run", {tool, args, label});
+  if(r.error){ toast(tr(r.error)); return; }
+  JOBS[tool] = {state:"running", lines:[], total:0, progress:null, label, result:null};
+  drawNav(); if(CUR === tool || panelFor(CUR).includes(tool)) draw(); else drawRun(CUR); poll();
+  const box = $("run-" + tool); if(box) box.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+async function stopJob(tool){ await api("/api/stop", {tool}); toast(tr("Stopped")); }
+let polling = null;
+function poll(){
+  if(polling) return;
+  polling = setInterval(async () => {
+    const live = Object.keys(JOBS).filter(t => JOBS[t].state === "running");
+    if(!live.length){ clearInterval(polling); polling = null; return; }
+    for(const t of live){
+      const j = JOBS[t];
+      const r = await api("/api/job?tool=" + t + "&since=" + (j.total || 0));
+      if(!r.job) continue;
+      const v = r.job;
+      j.lines = (j.lines || []).concat(v.lines); j.total = v.total;
+      Object.assign(j, {state:v.state, progress:v.progress, code:v.code, error:v.error, result:v.result, dir:v.dir, elapsed:v.elapsed});
+      if(v.state !== "running"){ drawNav(); if(DONE[t]) DONE[t](j); if(t === CUR || panelFor(CUR).includes(t)){ draw(); continue; } }
+      if(t === CUR) drawRun(CUR);
+    }
+  }, 700);
+}
+function panelFor(tool){ return tool === "upd" ? ["update"] : [tool]; }
+function drawRun(tool){
+  if(HEAD[tool]) HEAD[tool]();
+  panelFor(tool).forEach(t => {
+    const box = $("run-" + t); if(!box) return;
+    const j = JOBS[t];
+    if(!j){ box.innerHTML = '<div class="empty">' + esc(EMPTY[t] || "Results show here.") + '</div>'; return; }
+    box.innerHTML = runHtml(t, j);
+  });
+}
+function runHtml(t, j){
+  let h = "";
+  if(j.state === "running"){
+    const p = j.progress, pct = p && p.total ? Math.round(100 * p.done / p.total) : 0;
+    h += '<div class="runhead"><span class="spin"></span><b>' + esc(j.label) + '</b><span class="muted">' + esc(secs(j.elapsed)) + '</span><div class="sp"></div>' +
+         '<button class="btn sm gho" onclick="stopJob(\'' + t + '\')">Stop</button></div>';
+    if(p && p.total){ h += '<div class="bar"><div style="width:' + pct + '%"></div></div><div class="barlbl"><span>' + esc(p.label) + '</span><span>' +
+         p.done + '/' + p.total + '</span></div>'; }
+    else if(p){ h += '<div class="caption">' + esc(p.label) + '</div>'; }
+    else if(j.lines && j.lines.length){ h += '<div class="caption">' + esc(j.lines[j.lines.length - 1]) + '</div>'; }
+    h += det("log-" + t, "Log", '<pre>' + esc((j.lines || []).join("\n")) + '</pre>');
+    return h;
+  }
+  if(j.state === "failed" || j.state === "stopped"){
+    h += '<div class="runhead"><b>' + esc(j.label) + '</b><div class="sp"></div><span class="muted">' + esc(secs(j.elapsed)) + '</span></div>';
+    h += '<div class="note bad">' + esc(j.state === "stopped" ? "Stopped." : (j.error || "The run failed.")) + '</div>';
+    if(j.result && j.result.trace) h += det("tr-" + t, "Technical detail", '<pre>' + esc(j.result.trace) + '</pre>');
+    h += det("log-" + t, "Log", '<pre>' + esc((j.lines || []).join("\n")) + '</pre>');
+    return h;
+  }
+  return '<div class="runhead"><b>' + esc(j.label) + '</b><div class="sp"></div><span class="muted">Done in ' + esc(secs(j.elapsed)) + '</span></div>' +
+         resultHtml(t, j.result || {}, j) + det("log-" + t, "Log", '<pre>' + esc((j.lines || []).join("\n")) + '</pre>');
+}
+const OPEN = {};
+function det(k, summary, body){
+  return '<details data-k="' + k + '" ontoggle="OPEN[this.dataset.k]=this.open" ' + (OPEN[k] ? "open" : "") + '><summary>' + summary + '</summary>' + body + '</details>';
+}
+function secs(s){ if(s === undefined) return ""; s = +s; return s < 60 ? s + " s" : Math.floor(s/60) + " min " + (s % 60) + " s"; }
+function resultHtml(t, r, j){
+  let h = "";
+  if(r.stats && r.stats.length) h += '<div class="stats">' + r.stats.map(s => '<div class="stat"><div title="' + esc(s.label) + '">' + esc(s.label) +
+       '</div><b class="' + esc(s.tone || "") + '" title="' + esc(fmt(s.value)) + '">' + esc(fmt(s.value)) + '</b></div>').join("") + '</div>';
+  if(r.warns && r.warns.length) h += '<div class="note warn"><b>' + r.warns.length + ' warning' + (r.warns.length > 1 ? "s" : "") + '</b><ul>' +
+       r.warns.map(w => '<li>' + esc(w) + '</li>').join("") + '</ul></div>';
+  if(r.files && r.files.length){
+    h += '<div class="files">' + r.files.map(f => '<div class="file"><button class="btn pri" onclick="dl(' + esc(JSON.stringify(f.path)) + ')" title="Save a copy to Downloads">Download ' + esc(f.name) +
+         '</button><button class="btn" onclick="openPath(' + esc(JSON.stringify(f.path)) + ')">Open</button><button class="btn gho" onclick="openPath(' +
+         esc(JSON.stringify(f.path)) + ',1)" title="Show the file in its folder">Folder</button></div>').join("") + '</div>';
+  }
+  if(r.more && r.more.length) h += det("more-" + t, "Separate files (" + r.more.length + ")", '<div class="files">' + r.more.map(f => '<div class="file"><button class="btn" style="flex:1 1 220px;overflow:hidden;text-overflow:ellipsis;text-align:left" onclick="dl(' +
+       esc(JSON.stringify(f.path)) + ')">Download ' + esc(f.name) + '</button><button class="btn" onclick="openPath(' + esc(JSON.stringify(f.path)) + ')">Open</button></div>').join("") + '</div>');
+  if(r.notes && r.notes.length) h += '<div class="caption">' + r.notes.map(n => '<span>' + esc(n) + '</span>').join(" · ") + '</div>';
+  if(EXTRA[t]) h += EXTRA[t](r, j);
+  (r.tables || []).forEach((tb, i) => h += tableHtml(t, i, tb));
+  if(r.details) h += det("det-" + t, "Details", '<pre>' + esc(r.details) + '</pre>');
+  return h;
+}
+const TV = {};   // table view state: key -> {view, main}
+function tableHtml(t, i, tb){
+  const key = t + ":" + i, s = TV[key] || (TV[key] = {view:0, main:false});
+  let idx = tb.rows.map((_, k) => k);
+  if(tb.views && tb.views[s.view]) idx = tb.views[s.view].rows;
+  let cols = tb.cols.map((c, k) => k);
+  if(tb.main && s.main) cols = tb.main;
+  const LIM = 400, shown = idx.slice(0, LIM);
+  let h = '<div class="tbl"><div class="tblh"><h3>' + esc(tb.title) + '</h3>';
+  if(tb.views) h += '<div class="views">' + tb.views.map((v, k) => '<button class="' + (k === s.view ? "on" : "") + '" onclick="TV[\'' + key +
+       '\'].view=' + k + ';drawRun(CUR)">' + esc(v.label) + '</button>').join("") + '</div>';
+  if(tb.main) h += '<label class="ck" style="margin-left:auto"><input type="checkbox" ' + (s.main ? "checked" : "") + ' onchange="TV[\'' + key +
+       '\'].main=this.checked;drawRun(CUR)">Main columns only</label>';
+  h += '</div>';
+  if(!shown.length) return h + '<div class="muted">No rows here.</div></div>';
+  const links = new Set(tb.links || []);
+  h += '<div class="tw"><table><thead><tr>' + cols.map(c => '<th>' + esc(tb.cols[c]) + '</th>').join("") + '</tr></thead><tbody>';
+  shown.forEach(k => {
+    const row = tb.rows[k];
+    h += '<tr>' + cols.map(c => {
+      const v = row[c], name = tb.cols[c];
+      if(links.has(name)) return '<td>' + (v ? '<button class="link" onclick="openUrl(' + esc(JSON.stringify(v)) + ')">Open</button>' : "") + '</td>';
+      const long = /Lưu ý|Ghi chú|Note/i.test(name);
+      return '<td class="' + (typeof v === "number" ? "n" : long ? "wrap" : "") + '" title="' + esc(fmt(v)) + '">' + esc(fmt(v)) + '</td>';
+    }).join("") + '</tr>';
+  });
+  h += '</tbody></table></div>';
+  const total = tb.views && tb.views[s.view] ? idx.length : tb.total;
+  if(total > shown.length) h += '<div class="more">Showing ' + shown.length + ' of ' + total.toLocaleString() + ' rows. The file has all of them.</div>';
+  return h + '</div>';
+}
+
+// ------------------------------------------------------------ tools
+const VIEWS = {}, HEAD = {}, AFTER = {}, ONFILE = {}, DONE = {}, EXTRA = {}, EMPTY = {};
+const busyT = (t) => JOBS[t] && JOBS[t].state === "running";
+const ddmm = (iso) => iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : "";
+// dd/mm/yyyy typed by hand: a date picker follows the browser language and shows mm/dd/yyyy on English Edge
+function dateBox(tool, key, label){
+  return '<div style="flex:1;min-width:0"><div class="hint" style="margin:0 0 4px">' + esc(label) + '</div><input class="inp" placeholder="dd/mm/yyyy" value="' +
+         esc(ddmm(st(tool)[key] || "")) + '" onchange="setDay(\'' + tool + '\',\'' + key + '\',this)"></div>';
+}
+function setDay(tool, key, el){
+  if(!el.value.trim()){ st(tool)[key] = ""; draw(); return; }
+  const m = el.value.trim().match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  const iso = m ? m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0") : "";
+  const d = iso ? new Date(iso + "T00:00:00") : null;
+  if(!d || isNaN(d) || d.getDate() !== +m[1]){ toast(tr("Type the date as dd/mm/yyyy")); el.value = ddmm(st(tool)[key] || ""); return; }
+  st(tool)[key] = iso; draw();
+}
+function typeTable(files, acc){
+  return '<div class="tw" style="margin-top:8px"><table><thead><tr><th>File</th><th>Type</th>' + (acc ? '<th>Account</th>' : '') + '</tr></thead><tbody>' +
+    files.map(f => '<tr><td title="' + esc(f.name) + '">' + esc(f.name) + '</td><td class="t">' + esc(f.type) + '</td>' +
+    (acc ? '<td>' + esc(f.account || "") + '</td>' : '') + '</tr>').join("") + '</tbody></table></div>';
+}
+async function look(tool, key, kind){
+  const s = st(tool); s.insp = null;
+  if(!ready(tool, key)) return;
+  s.inspecting = true; if(CUR === tool) draw();
+  s.insp = await api("/api/inspect", {kind, ids:ids(tool, key)});
+  s.inspecting = false;
+}
+function reading(s){ return s.inspecting ? '<div class="status" style="margin-top:10px"><span class="spin"></span>Reading the files...</div>' : ""; }
+function ck(tool, key, label, hint, disabled, sub){
+  const v = !!st(tool)[key] && !disabled;
+  return '<label class="ck" style="' + (sub ? "margin-left:22px;" : "") + (disabled ? "opacity:.5;cursor:default" : "") + '"><input type="checkbox" ' + (v ? "checked " : "") +
+         (disabled ? "disabled " : "") + 'onchange="S[\'' + tool + '\'][\'' + key + '\']=this.checked;draw()">' + esc(label) + '</label>' +
+         (hint ? '<div class="hint" style="margin:0 0 6px ' + (sub ? 44 : 22) + 'px">' + esc(hint) + '</div>' : '');
+}
+
+// ---- settings files: open in Excel, show in folder, download a copy, replace with another file
+let SETS = null;
+async function loadSets(){ SETS = await api("/api/settings"); if(SETS.error) SETS = null; if(VIEWS[CUR]) draw(); }
+function setCard(name, title, text){
+  const x = SETS && SETS[name];
+  let h = '<div class="card"><h2>' + esc(title) + '</h2><div class="muted">' + esc(text) + '</div>';
+  if(x) h += '<div class="hint">' + (x.exists ? '<span>Last changed ' + esc(x.modified) + '</span>' + (x.edited ? ' · <span>edited on this PC</span>' : '') : 'Missing') + '</div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
+       '<button class="btn sm" onclick="setAct(\'' + name + '\',\'open\')">Open in Excel</button>' +
+       '<button class="btn sm gho" onclick="setAct(\'' + name + '\',\'folder\')">Show in folder</button>' +
+       (x && x.exists ? '<button class="btn sm gho" onclick="dl(' + esc(JSON.stringify(x.path)) + ')">Download a copy</button>' : '') +
+       '<button class="btn sm gho" onclick="setReplace(\'' + name + '\')">Replace with a file...</button></div>';
+  return h + '</div>';
+}
+async function setAct(name, action){ const r = await api("/api/setting", {name, action}); if(r.error) toast(tr(r.error)); }
+const SET_OK = {config:"config.xlsx replaced. The next run uses it.", units:"Unit_Codes.xlsx replaced. Run again to use it."};
+function setReplace(name){
+  const fp = $("fpick"); fp.value = ""; fp.accept = ".xlsx"; fp.multiple = false;
+  fp.onchange = async () => {
+    const f = fp.files[0]; if(!f) return;
+    let r;
+    try { r = await (await fetch("/api/upload?t=" + T + "&name=" + encodeURIComponent(f.name), {method:"POST", body:f})).json(); }
+    catch(e){ r = {error:"upload failed"}; }
+    if(!r.error) r = await api("/api/setting", {name, action:"replace", id:r.id});
+    toast(tr(r.error || SET_OK[name] || "Done"));
+    loadSets();
+  };
+  fp.click();
+}
+
+// ---- Debt report 1311
+const DEBT_SCOPES = [["full", "Full report (13111 + 0051)"], ["0051", "0051 only"], ["13111", "13111 only"]];
+EMPTY.debt = "Add the PIAS exports of the period, tick the outputs, then Run.";
+function debtProblems(s, i){
+  const k = i.files.map(f => f.kind), c = (x) => k.filter(y => y === x).length, out = [];
+  if(c("raw")){
+    const accs = new Set(i.files.filter(f => f.kind === "raw").map(f => f.account));
+    const miss = (i.scopes[s.scope] || []).filter(a => !accs.has(a));
+    if(miss.length) out.push("Missing the BCPBHTT file of account(s): " + miss.join(", ") + ".");
+  }
+  if(!c("raw") && !c("report")) out.push("Upload the BCPBHTT files, or a BC công nợ file that is already built.");
+  if(s.clean && !(c("bk") && c("list"))) out.push("Clean invoices needs both BK_HDVAT and List hóa đơn.");
+  if(s.kh && s.scope !== "0051" && !c("list")) out.push("Letters to customers needs List hóa đơn.");
+  if(c("bk") > 1) out.push("Upload only one BK_HDVAT file.");
+  if(c("list") > 1) out.push("Upload only one List hóa đơn file.");
+  if(c("report") > 1) out.push("Upload only one BC công nợ file.");
+  return out;
+}
+VIEWS.debt = () => {
+  const s = st("debt"), i = s.insp;
+  if(!s.scope) s.scope = "full";
+  if(s.verify === undefined) s.verify = true;
+  const excel = !ENV || ENV.excel;
+  let h = '<div class="cols"><div class="stack"><div class="card"><div class="muted">Turns the PIAS exports of a period into the 1311 debt report, then the clean invoice file, the letters to customers and the reconciliation for the business units.</div>' +
+    '<div class="no" style="margin-top:14px">1 · PIAS exports</div>' +
+    field("debt", "files", ".xlsx", true, "Drop the files of the period here or click to choose") +
+    '<div class="hint">The 5 BCPBHTT files (only the 0051 one for a 0051 only run). Add List hóa đơn and BK_HDVAT (exported from 01/01 to the closing date) for the invoice outputs. Report already built? Add that BC công nợ file instead of the BCPBHTT files.</div>' + reading(s);
+  let probs = null, raw = false;
+  if(i && i.error) h += '<div class="note bad">' + esc(i.error) + '</div>';
+  if(i && i.files){
+    raw = i.files.some(f => f.kind === "raw");
+    h += typeTable(i.files, true);
+    const extra = [...new Set(i.files.filter(f => f.kind === "raw" && f.account && !(i.scopes[s.scope] || []).includes(f.account)).map(f => f.account))];
+    if(extra.length) h += '<div class="hint">Ignored for this run: account(s) ' + esc(extra.join(", ")) + '.</div>';
+    probs = debtProblems(s, i);
+  }
+  h += '<div class="no">2 · Outputs</div>' + seg("debt", "scope", DEBT_SCOPES) +
+    (s.scope === "0051" ? '<div class="hint">0051 only needs just the 0051 BCPBHTT file and takes well under a minute.</div>' : '') +
+    '<div style="margin-top:10px"></div>' +
+    '<label class="ck" style="opacity:.75;cursor:default"><input type="checkbox" ' + (raw ? "checked " : "") + 'disabled>Debt report 1311 (BC công nợ)</label>' +
+    ck("debt", "verify", "Re-check it in Excel", excel ? "Excel recalculates every formula, then the totals are compared with the exports. Adds about a minute."
+                                                     : "Excel is not on this PC, so the report cannot be re-checked.", !raw || !excel, true);
+  if(i && i.files && !raw && i.files.some(f => f.kind === "report")) h += '<div class="hint">No BCPBHTT file: the added BC công nợ file is used as the report.</div>';
+  h += ck("debt", "clean", "Clean invoices (Hóa đơn sạch)", "Needs BK_HDVAT and List hóa đơn. Takes about 3 minutes.") +
+       ck("debt", "kh", "Letters to customers (Thư gửi KH)", s.scope === "0051" ? "Letters to customers use account 13111, so they cannot run with 0051 only." : "Needs List hóa đơn and account 13111.", s.scope === "0051") +
+       ck("debt", "pkd", "Reconciliation for business units (Đối chiếu P.KD)", "Two files: the confirmation, and the statement attached to it.");
+  (probs || []).forEach(p => h += '<div class="note warn">' + esc(p) + '</div>');
+  const can = probs && !probs.length && !busyT("debt");
+  h += '<div class="act"><button class="btn pri" ' + (can ? "" : "disabled") + ' onclick="runDebt()">Run</button></div></div>' +
+    setCard("config", "Settings file (config.xlsx)", "Rules for business groups, merged customers, business units and the people who sign the letters. Open it in Excel, edit, save and close: the next run uses it.");
+  return h + '</div><div class="card" id="run-debt"></div></div>';
+};
+ONFILE.debt = (key, removed) => look("debt", "files", "debt");
+function runDebt(){
+  const s = st("debt"), raw = s.insp.files.some(f => f.kind === "raw");
+  run("debt", {files:ids("debt", "files"), scope:s.scope, verify:!!s.verify && raw && (!ENV || ENV.excel),
+               clean:!!s.clean, kh:!!s.kh && s.scope !== "0051", pkd:!!s.pkd}, "Debt report 1311");
+}
+
+// ---- PIAS fix for other PVI units
+EMPTY.pias = "Add the PIAS receipt file (ctXXXX) and the PVI khác list from Ms. Kiều. Every matched row gets Tk có 33664, the unit code in Khách có and P/Ban có, Cán bộ có cleared, and Tk có highlighted yellow.";
+VIEWS.pias = () => {
+  const s = st("pias"), i = s.insp;
+  let h = '<div class="cols"><div class="stack"><div class="card"><div class="no">PIAS file(s) and the PVI khác list</div>' +
+    field("pias", "files", ".xlsx,.xlsm", true) +
+    '<div class="hint">The type of each file is read from its headers. Several versions of the list? Add them all, the one that matches the most rows is used.</div>' + reading(s);
+  let ok = false;
+  if(i && i.error) h += '<div class="note bad">' + esc(i.error) + '</div>';
+  if(i && i.files){
+    h += typeTable(i.files);
+    const k = i.files.map(f => f.kind);
+    if(!k.includes("pias")) h += '<div class="note warn">No PIAS receipt file among these files.</div>';
+    else if(!k.includes("list")) h += '<div class="note warn">Add the PVI khác list from Ms. Kiều as well.</div>';
+    else ok = true;
+  }
+  h += det("pias-opt", "Only when the result looks wrong",
+      '<div class="hint" style="margin:8px 0 4px">Sheet of the list</div><input class="inp" value="' + esc(s.sheet || "") + '" placeholder="Leave empty, the sheet is detected." oninput="S.pias.sheet=this.value">' +
+      '<div class="hint" style="margin:10px 0 4px">Only these days of the list</div><input class="inp" value="' + esc(s.dates || "") + '" placeholder="08/09,09/09" oninput="S.pias.dates=this.value">' +
+      '<div class="hint">Leave empty to use every day that matches.</div>');
+  const can = ok && !busyT("pias");
+  h += '<div class="act"><button class="btn pri" ' + (can ? "" : "disabled") + ' onclick="run(\'pias\',{files:ids(\'pias\',\'files\'),sheet:S.pias.sheet||\'\',dates:S.pias.dates||\'\'},\'PIAS fix for other PVI units\')">Fix PIAS file</button></div></div>' +
+    setCard("units", "Unit codes (Unit_Codes.xlsx)", "Unit name to code, for example PVI Hà Nội → 00.18010000. When the result says a unit has no code, open the file, add a row for it, save and close.");
+  return h + '</div><div class="card" id="run-pias"></div></div>';
+};
+ONFILE.pias = (key, removed) => look("pias", "files", "pias");
+EXTRA.pias = (r) => r.console ? '<div class="no" style="margin-top:16px">What the tool reported</div><pre>' + esc(r.console) + '</pre>' : "";
+
+// ---- Offset with the 5111 ledger (kept short on purpose: two files, the period, one button)
+EMPTY.offset = "Add the 5111 ledger and the detail file, then Run the offset.";
+VIEWS.offset = () => {
+  const s = st("offset");
+  const can = ready("offset", "ledger") && ready("offset", "detail") && !busyT("offset");
+  return '<div class="cols"><div class="card"><div class="no">Ledger 5111</div>' + field("offset", "ledger", ".xlsx,.xlsm", false) +
+    '<div class="no">Detail file</div>' + field("offset", "detail", ".xlsx,.xlsm", false) +
+    det("off-per", "Period", '<div style="display:flex;gap:8px;margin-top:8px">' + dateBox("offset", "chot", "Cut-off date") + '<div style="flex:1"></div></div>' +
+      '<div class="hint" style="margin:10px 0 4px">Payment period on the BBDS sheet</div><input class="inp" value="' + esc(s.ky || "") +
+      '" placeholder="Từ ngày 01/08/2026 đến ngày 31/08/2026" oninput="S.offset.ky=this.value"><div class="hint">Empty = from the files.</div>') +
+    '<div class="act"><button class="btn pri" ' + (can ? "" : "disabled") + ' onclick="run(\'offset\',{ledger:ids(\'offset\',\'ledger\')[0],detail:ids(\'offset\',\'detail\')[0],chot:S.offset.chot||\'\',ky:S.offset.ky||\'\'},\'Offset with the 5111 ledger\')">Run the offset</button></div>' +
+    '</div><div class="card" id="run-offset"></div></div>';
+};
+
+// ---- Update
+VIEWS.upd = () => {
+  const u = UPDINFO;
+  let msg = "Checking...", btn = false;
+  if(u){
+    if(!u.configured) msg = "Updates are not set up in this copy (app\\update.json has no repo).";
+    else if(u.error) msg = "Cannot check: " + u.error + ".";
+    else if(u.available){ msg = "Version " + u.latest + " is available."; btn = true; }
+    else msg = "This is the latest version.";
+  }
+  const j = JOBS.update, done = j && j.state === "done";
+  return '<div class="stack" style="max-width:760px"><div class="card"><div style="display:flex;align-items:center;gap:14px"><div><div class="no">Version in use</div><div class="big">' +
+    esc(VER) + '</div></div><div style="flex:1"></div><button class="btn sm" onclick="checkUpd(true)">Check for updates</button></div>' +
+    '<p class="muted" style="margin:12px 0 0">' + esc(msg) + '</p><div class="act">' +
+    (btn && !done ? '<button class="btn pri" onclick="run(\'update\',{},\'Update\')" style="flex:0 0 auto">Download and install</button>' : "") +
+    (done ? '<button class="btn pri" style="flex:0 0 auto" onclick="restart()">Restart the tool</button>' : "") + '</div></div>' +
+    (u && u.notes ? '<div class="card"><h2>What is new</h2><div class="notes">' + esc(u.notes) + '</div></div>' : "") +
+    '<div class="card"><h2>Install from a zip file</h2><p class="muted" style="margin:0">When this PC cannot reach GitHub.</p><div style="display:flex;gap:8px;margin-top:10px">' +
+    '<input class="inp" id="zipPath" placeholder="C:\\Users\\...\\Downloads\\accounting-tools-main.zip"><button class="btn" onclick="runZip()">Install</button></div></div>' +
+    '<div class="card"><div class="muted">Your edited config.xlsx, Unit_Codes.xlsx and Offset_Rates.xlsx are kept when updating.</div></div>' +
+    '<div class="card" id="run-update"></div></div>';
+};
+async function checkUpd(force){
+  if(force){ UPDINFO = null; if(CUR === "upd") draw(); }
+  UPDINFO = await api("/api/update/check"); drawNav(); if(CUR === "upd") draw();
+}
+function runZip(){ const p = $("zipPath").value.trim(); if(!p) return; api("/api/run", {tool:"update", mode:"local", zip:p}).then(r => {
+  if(r.error){ toast(r.error); return; } JOBS.update = {state:"running", lines:[], total:0, label:"Update"}; poll(); draw(); }); }
+DONE.update = () => { if(CUR === "upd") draw(); loadSets(); };
+EMPTY.update = "";
+async function restart(){ await api("/api/restart", {}); gone("Restarting..."); }
+async function quit(){
+  if(Object.values(JOBS).some(j => j.state === "running") && !confirm(tr("A tool is still running. Quit and stop it?"))) return;
+  await api("/api/quit", {}); gone("The tool is closed.");
+}
+
+// ------------------------------------------------------------ start
+async function init(){
+  setLang(LANG);
+  api("/api/ping", {});
+  const s = await api("/api/state");
+  if(s.error) return;
+  VER = s.version; $("ver").textContent = "v" + VER; UPDINFO = s.update;
+  for(const t of Object.keys(s.jobs || {})){
+    const r = await api("/api/job?tool=" + t + "&since=0");
+    if(r.job){ const v = r.job; JOBS[t] = {...v, lines:v.lines, total:v.total}; }
+  }
+  let start = "debt"; try { start = localStorage.getItem("acct_tool") || "debt"; } catch(e){}
+  go(VIEWS[start] ? start : "debt");
+  loadSets();
+  poll();
+  api("/api/env").then(e => { ENV = e; draw(); });
+  if(!UPDINFO) setTimeout(() => checkUpd(false), 2500);
+  setInterval(() => api("/api/ping", {}), 30000); api("/api/ping", {});
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+output/
+backups/
+dist/
+app/dump/
+app/pyembed/
+app/_backup_*/
+__pycache__/
+*.pyc
+~$*
+app/update.json
+app/engines/pias/tool/last_folder.txt

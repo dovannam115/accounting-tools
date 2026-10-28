@@ -1,0 +1,6 @@
+v1.0.0 (28/10/2026)
+- First desktop version of Accounting Tools, replacing the web page: Debt report 1311, PIAS fix for other PVI units, Offset with the 5111 ledger.
+- Tiếng Việt by default, English switch at the bottom of the left bar.
+- Settings files (config.xlsx, Unit_Codes.xlsx) open in Excel from the app; the old copy goes to the backups folder when replaced with another file. Updates never overwrite a settings file edited on this PC.
+- Unzip and run: the first start of Accounting Tools.bat adds an Accounting Tools shortcut to the Desktop and the Start menu.
+- Updates come from GitHub with one click (Update in the left bar).
