@@ -1,3 +1,13 @@
+v1.1.0 (03/11/2026)
+- Offset 5111 now also takes the ĐMX (TGDĐ) detail file as ĐMX sends it. The tool keeps the file and adds mvv, tỷ lệ, PDV, CPBH, TĐBH, tk 13 and the offset status to each detail sheet, plus a sum by mvv. Totals come from the summary sheets (lines (3), (4), (5)).
+- Cut-off date for the ĐMX file defaults to the 30th of the month after the data month. Set it by hand under Period if needed.
+- Output files follow the house Excel style: Barlow font, no gridlines, a line under the header and above totals, no title banner or notes. Columns widen so nothing shows as ####.
+- Fixed: the Tổng hợp sheet counted 1 when a list was empty (extra ledger rows, keys not in the ledger, keys without an invoice).
+- The ĐMX file is checked before the ledger is read: a file already processed, a detail sheet without its summary sheet, or a file never saved in Excel stops in a second with a clear message.
+- If the rows of a ĐMX sheet do not add up to the summary total, the result page warns and the split uses the rows only.
+- Large ĐMX files run fast (4,300 rows in about a minute, was over 10 minutes).
+- The FUSE layout works as before.
+
 v1.0.0 (28/10/2026)
 - First desktop version of Accounting Tools, replacing the web page: Debt report 1311, PIAS fix for other PVI units, Offset with the 5111 ledger.
 - Tiếng Việt by default, English switch at the bottom of the left bar.

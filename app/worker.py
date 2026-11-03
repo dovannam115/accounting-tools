@@ -183,6 +183,7 @@ def run_offset(a):
         notes.append("%s key(s) without an invoice number, %s of premium: sheet Hóa đơn chưa gán."
                      % (format(res["n_unassigned"], ",").replace(",", "."),
                         format(round(res["phi_unassigned"]), ",").replace(",", ".")))
+    notes += res.get("warnings") or []
     n = lambda v: format(v, ",").replace(",", ".")
     return {"stats": [stat("Invoices off", "%s/%s" % (n(res["n_invoice_bad"]), n(res["n_invoice"])),
                            "warn" if res["n_invoice_bad"] else "good"),

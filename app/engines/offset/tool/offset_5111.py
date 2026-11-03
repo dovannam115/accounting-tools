@@ -24,11 +24,13 @@ Quy ước đã kiểm bằng dữ liệu thật (kỳ T08/2026, sổ 5111 xuấ
 Chạy ngoài app:  py -3.13 offset_5111.py <sổ 5111.xlsx> <file chi tiết.xlsx> [thư mục ra]
 """
 import datetime as dt
+import itertools
 import os
 import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
+from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
 
 import openpyxl
@@ -44,11 +46,12 @@ BBDS_NAME = "BBDS_Template.xlsx"   # sheet BBDS: dung lai dung file mau cua ke t
 RATE_SHEET = "Tỷ lệ"       # sheet ty le trong file giao, cong thuc tra sang day
 
 MAX_HEADER_ROW = 12                      # tiêu đề nằm trong mấy dòng đầu
-FILL_HEAD = PatternFill("solid", start_color="EEF2F7")
+FONT = "Barlow"                          # chuẩn Excel của anh Nam (15/10/2026): Barlow, tắt gridline
+LINE = Side(style="thin", color="808080")  # chỉ gạch dưới tiêu đề và gạch trên dòng tổng
 FILL_BAD = PatternFill("solid", start_color="FDE9E9")
 FILL_WARN = PatternFill("solid", start_color="FFF6E0")
 THIN = Side(style="thin", color="D0D0D0")
-RED = Font(name="Arial", size=10, color="C00000")
+RED = Font(name=FONT, size=10, color="C00000")
 
 
 class ToolError(Exception):
@@ -167,15 +170,15 @@ LEDGER_NAMES = {
 LEDGER_NEED = ("so_ctu", "so_don", "ma_sp", "phi")
 
 DETAIL_NAMES = {
-    "so_don": ["Số đơn BH", "Số đơn Bh"],
+    "so_don": ["Số đơn BH", "Số đơn Bh", "Số đơn BH/SĐBS"],
     "ma_sp": ["Mã sp"],
-    "phi": ["Nguyên tệ phí", "Nguyên tệ(Phí)"],
-    "phi_vat": ["Số tiền phí"],
+    "phi": ["Nguyên tệ phí", "Nguyên tệ(Phí)", "Phí bh - vat"],
     "hoa_don": ["Hóa đơn", "Hoá đơn"],
     "dai_ly": ["Mã Đại lý", "Đại lý"],
     "ngay_cap": ["Ngày cấp đơn"],
     "ngay_cuoi": ["Ngày cuối", "ngày cuối"],
     "seri": ["Số seri"],
+    "phi_vat": ["Số tiền phí", "Phí BH + Vat"],
 }
 DETAIL_NEED = ("so_don", "ma_sp", "phi")
 
@@ -240,7 +243,7 @@ def read_detail(path, log=print):
             head_row, header, cols = found
             sh = DetailSheet(ws.title, header, cols, head_row)
             width = len(header)
-            for row in ws.iter_rows(min_row=head_row + 1, values_only=True):
+            for xl_row, row in enumerate(ws.iter_rows(min_row=head_row + 1, values_only=True), head_row + 1):
                 src = list(row[:width]) + [None] * max(0, width - len(row))
                 don = norm_policy(sh.get(src, "so_don"))
                 if "/" not in don:                      # dòng trống hay dòng SUBTOTAL cuối bảng
@@ -248,6 +251,7 @@ def read_detail(path, log=print):
                 phi = dec(sh.get(src, "phi"))
                 sh.rows.append({
                     "src": src,
+                    "xl_row": xl_row,
                     "don": don,
                     "sp": norm_sp(sh.get(src, "ma_sp")),
                     "phi": phi if phi is not None else Decimal(0),
@@ -412,16 +416,11 @@ def spread_rounding(rows, amount_of, rate, divisor):
     return out
 
 
-def apply_rates(sheets, per_key, rates, chot, log=print):
-    """Điền số hóa đơn, mã kế toán, hoa hồng, phí dịch vụ vào từng dòng chi tiết.
-
-    chot: ngày chốt kỳ, dùng cho cột mvv (số tháng từ ngày chốt tới ngày cuối của đơn).
-    """
+def attach_ledger(sheets, per_key, chot):
+    """Gắn thông tin sổ 5111 vào từng dòng chi tiết: hóa đơn, tk nợ, mã khách, ngày, mvv."""
     by_policy = defaultdict(list)
     for (don, _sp), items in per_key.items():
         by_policy[don].extend(items)
-
-    missing_rate = set()
     for sh in sheets:
         matched = [r for r in sh.rows if per_key.get((r["don"], r["sp"]))]
         fallback = {f: _common([i for r in matched for i in per_key[(r["don"], r["sp"])]], f)
@@ -444,9 +443,16 @@ def apply_rates(sheets, per_key, rates, chot, log=print):
             r["ngay_dau"] = _common(items, "ngay_dau")
             r["ngay_cuoi"] = _common(items, "ngay_cuoi") or as_date(sh.get(r["src"], "ngay_cuoi"))
             r["mvv"] = months_between(chot, r["ngay_cuoi"])
-            if r["sp"] not in rates:
-                missing_rate.add(r["sp"])
+            r["phi_so"] = sum((i["phi"] for i in per_key.get((r["don"], r["sp"]), [])), Decimal(0))
 
+
+def apply_rates(sheets, per_key, rates, chot, log=print):
+    """Điền số hóa đơn, mã kế toán, hoa hồng, phí dịch vụ vào từng dòng chi tiết.
+
+    chot: ngày chốt kỳ, dùng cho cột mvv (số tháng từ ngày chốt tới ngày cuối của đơn).
+    """
+    attach_ledger(sheets, per_key, chot)
+    missing_rate = {r["sp"] for sh in sheets for r in sh.rows if r["sp"] not in rates}
     if missing_rate:
         raise ToolError("No rate for product code(s) %s. Add a row for each in %s (download it on "
                         "the page, add the row in Excel, upload it again)."
@@ -558,20 +564,19 @@ def offset(sheets, per_key, inv_rows, detail_agents, by_ctu, log=print):
 
 # ----------------------------------------------------------------- ghi file Excel
 
-def _head(ws, row, labels, widths=None, font="Arial", size=10):
+def _head(ws, row, labels, widths=None, font=FONT, size=10):
+    """Hàng tiêu đề: chữ đậm, gạch dưới, không tô nền, không ngắt dòng (cột tự nới cho vừa chữ)."""
     for j, lab in enumerate(labels, 1):
         c = ws.cell(row=row, column=j, value=lab)
         c.font = Font(name=font, size=size, bold=True)
-        c.fill = FILL_HEAD
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        c.border = Border(bottom=THIN)
-    if widths:
-        for j, w in enumerate(widths, 1):
-            ws.column_dimensions[get_column_letter(j)].width = w
-    ws.row_dimensions[row].height = 30
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = Border(bottom=LINE)
+        w = max((widths or [])[j - 1] if widths and j <= len(widths) else 0, len(txt(lab)) * 1.15 + 3)
+        ws.column_dimensions[get_column_letter(j)].width = w
+    ws.row_dimensions[row].height = 20
 
 
-def _cell(ws, row, col, value, fmt=None, font="Arial", size=10, bold=False, align=None):
+def _cell(ws, row, col, value, fmt=None, font=FONT, size=10, bold=False, align=None):
     c = ws.cell(row=row, column=col, value=value)
     c.font = Font(name=font, size=size, bold=bold)
     if fmt:
@@ -584,6 +589,11 @@ def _cell(ws, row, col, value, fmt=None, font="Arial", size=10, bold=False, alig
 MONEY = "#,##0;(#,##0);-"
 PCT = "0.0%"
 DATE = "dd/mm/yyyy"
+
+
+def _total_line(ws, row, ncol):
+    for j in range(1, ncol + 1):
+        ws.cell(row=row, column=j).border = Border(top=LINE)
 
 
 def write_offset_file(path, res, info, applied=None):
@@ -613,6 +623,7 @@ def write_offset_file(path, res, info, applied=None):
         _cell(s1, end1 + 1, 1, "TỔNG", bold=True)
         for col in ("B", "C", "D", "E", "F"):
             _cell(s1, end1 + 1, ord(col) - 64, "=SUM(%s2:%s%d)" % (col, col, end1), MONEY, bold=True)
+        _total_line(s1, end1 + 1, 7)
     s1.freeze_panes = "A2"
 
     # ----- Theo đơn
@@ -640,6 +651,7 @@ def write_offset_file(path, res, info, applied=None):
         _cell(s2, end2 + 1, 1, "TỔNG", bold=True)
         for col in ("D", "E", "F", "G", "H"):
             _cell(s2, end2 + 1, ord(col) - 64, "=SUM(%s2:%s%d)" % (col, col, end2), MONEY, bold=True)
+        _total_line(s2, end2 + 1, 10)
     s2.freeze_panes = "A2"
 
     # ----- Thiếu trong sổ
@@ -658,6 +670,7 @@ def write_offset_file(path, res, info, applied=None):
         _cell(s3, end3 + 1, 1, "TỔNG", bold=True)
         for col in ("D", "E"):
             _cell(s3, end3 + 1, ord(col) - 64, "=SUM(%s2:%s%d)" % (col, col, end3), MONEY, bold=True)
+        _total_line(s3, end3 + 1, 6)
     s3.freeze_panes = "A2"
 
     # ----- Thừa trong sổ
@@ -677,6 +690,7 @@ def write_offset_file(path, res, info, applied=None):
     if end4 >= 2:
         _cell(s4, end4 + 1, 1, "TỔNG", bold=True)
         _cell(s4, end4 + 1, 5, "=SUM(E2:E%d)" % end4, MONEY, bold=True)
+        _total_line(s4, end4 + 1, 8)
     s4.freeze_panes = "A2"
 
     # ----- Hóa đơn chưa gán: chỉ đối trừ được ở mức đơn
@@ -696,13 +710,13 @@ def write_offset_file(path, res, info, applied=None):
         _cell(s5, end5 + 1, 1, "TỔNG", bold=True)
         for col in ("C", "D"):
             _cell(s5, end5 + 1, ord(col) - 64, "=SUM(%s2:%s%d)" % (col, col, end5), MONEY, bold=True)
-    s4.freeze_panes = "A2"
+        _total_line(s5, end5 + 1, 7)
+    s5.freeze_panes = "A2"
 
     # ----- Tổng hợp (đọc số từ các sheet trên bằng công thức)
-    ws.column_dimensions["A"].width = 44
-    ws.column_dimensions["B"].width = 20
-    ws.column_dimensions["C"].width = 46
-    _cell(ws, 1, 1, "ĐỐI TRỪ VỚI SỔ 5111", bold=True, size=13)
+    ws.column_dimensions["A"].width = 40
+    ws.column_dimensions["B"].width = max(20, min(60, max(len(txt(info.get(k))) for k in
+                                                          ("ky", "detail_name", "ledger_name")) * 1.05 + 2))
     rows = [
         ("Kỳ chi tiết", info["ky"], "Theo Ngày cấp đơn trong file chi tiết"),
         ("Ngày chốt (cột mvv)", info["chot"], "Số tháng từ ngày này tới ngày cuối của đơn"),
@@ -715,40 +729,49 @@ def write_offset_file(path, res, info, applied=None):
         ("Phí trong sổ 5111", "='Theo đơn'!G%d" % (end2 + 1), "Chỉ các dòng sổ khớp khoá đơn"),
         ("Lệch theo đơn", "='Theo đơn'!H%d" % (end2 + 1), "Bằng 0 là khớp hết"),
         (None, None, None),
-        ("Số hóa đơn đối trừ", "=COUNTA('Theo hóa đơn'!A2:A%d)" % end1, None),
+        ("Số hóa đơn đối trừ", "=COUNTA('Theo hóa đơn'!A2:A%d)" % max(end1, 2), None),
         ("Hóa đơn khớp", '=COUNTIF(\'Theo hóa đơn\'!G2:G%d,"Khớp")' % end1, None),
         ("Hóa đơn lệch", '=COUNTIF(\'Theo hóa đơn\'!G2:G%d,"Lệch")' % end1, None),
         ("Hóa đơn không có trong sổ", '=COUNTIF(\'Theo hóa đơn\'!G2:G%d,"Không có trong sổ")' % end1, None),
         (None, None, None),
-        ("Khoá đơn và sản phẩm", "=COUNTA('Theo đơn'!A2:A%d)" % end2, None),
-        ("Khoá chưa có trong sổ", "=COUNTA('Thiếu trong sổ'!A2:A%d)" % end3, "Phí: xem sheet Thiếu trong sổ"),
+        ("Khoá đơn và sản phẩm", "=COUNTA('Theo đơn'!A2:A%d)" % max(end2, 2), None),
+        ("Khoá chưa có trong sổ", "=COUNTA('Thiếu trong sổ'!A2:A%d)" % max(end3, 2), "Phí: xem sheet Thiếu trong sổ"),
         ("Phí chưa có trong sổ", "='Thiếu trong sổ'!E%d" % (end3 + 1), None),
+    ] + ([
+        ("PDV chưa VAT (chi tiết đã áp)", (applied or {}).get("pdv"), "Tổng cột PDV các sheet chi tiết"),
+        ("CPBH chưa VAT (chi tiết đã áp)", (applied or {}).get("cpbh"), "Mục (4) của biên bản, chia theo tỷ lệ doanh thu"),
+        ("TĐBH chưa VAT (chi tiết đã áp)", (applied or {}).get("tdbh"), "Mục (5) của biên bản, chia theo tỷ lệ doanh thu"),
+    ] if info.get("mode") == "dmx" else [
         ("Hoa hồng đại lý (chi tiết đã áp)", (applied or {}).get("hh"),
          "Bằng ô Hoa hồng đại lý của BBDS trong file chi tiết đã áp"),
         ("Phí dịch vụ chưa VAT (chi tiết đã áp)", (applied or {}).get("pdv"),
          "BBDS ghi phí dịch vụ ĐÃ gồm VAT, chia (1 + VAT phí dịch vụ) ra số này"),
+    ]) + [
         (None, None, None),
-        ("Dòng sổ thừa so với chi tiết", "=COUNTA('Thừa trong sổ'!A2:A%d)" % end4, None),
+        ("Dòng sổ thừa so với chi tiết", "=COUNTA('Thừa trong sổ'!A2:A%d)" % max(end4, 2), None),
         ("Phí thừa trong sổ", "='Thừa trong sổ'!E%d" % (end4 + 1), None),
         (None, None, None),
-        ("Khoá chưa gán được hóa đơn", "=COUNTA('Hóa đơn chưa gán'!A2:A%d)" % end5,
+        ("Khoá chưa gán được hóa đơn", "=COUNTA('Hóa đơn chưa gán'!A2:A%d)" % max(end5, 2),
          "File chi tiết để trống mà sổ có nhiều chứng từ, hoặc đơn chưa vào sổ"),
         ("Phí chưa gán hóa đơn", "='Hóa đơn chưa gán'!D%d" % (end5 + 1),
          "Phần này chỉ đối trừ ở mức đơn, không vào bảng theo hóa đơn"),
         ("Dòng có hóa đơn khác sổ", len(res["mismatch"]),
          "Số hóa đơn trong file không nằm trong chứng từ của đơn đó trong sổ"),
     ]
-    r = 3
-    for label, value, note in rows:
+    r = 1
+    for label, value, _note in rows:
         if label is None:
             r += 1
             continue
         _cell(ws, r, 1, label, bold=True)
         c = _cell(ws, r, 2, value)
-        if isinstance(value, str) and value.startswith("=") or isinstance(value, (int, float)):
+        if isinstance(value, (dt.date, dt.datetime)):
+            c.number_format = DATE
+            c.alignment = Alignment(horizontal="left")
+        elif isinstance(value, str) and value.startswith("=") or isinstance(value, (int, float)):
             c.number_format = MONEY
-        if note:
-            _cell(ws, r, 3, note).font = Font(name="Arial", size=9, italic=True, color="808080")
+        else:
+            c.alignment = Alignment(horizontal="left")
         r += 1
     for s in wb.worksheets:
         s.sheet_view.showGridLines = False
@@ -997,6 +1020,500 @@ def write_detail_file(path, sheets, rates, info, res, log=print):
     return path
 
 
+# ----------------------------------------------------------------- mẫu ĐMX (TGDĐ)
+#
+# Mẫu thứ hai của kế toán (2026-11-03, file mẫu ĐMX T07/2026). ĐMX gửi sẵn một file gồm các sheet
+# chi tiết (ADLD, ADLD PLUS, 1D1, NVMH, BHMR) và các sheet biên bản đi kèm ("ADLD 1", "1D1 - 1"...).
+# Kế toán không dựng BBDS mà chỉ thêm vào sheet chi tiết: mvv, tỷ lệ doanh thu, PDV (phí dịch vụ
+# chưa VAT), CPBH (chi phí dịch vụ bán hàng (4) chưa VAT, chia theo tỷ lệ doanh thu), TĐBH (chi
+# phí thi đua (5), nếu có) và bảng cộng theo mvv. Số tổng lấy từ sheet biên bản có dòng
+# "Tổng số tiền phí bảo hiểm phải thanh toán cho PVID".
+
+DMX_PAY = "phaithanhtoanchopvid"
+DMX_DONE = {"mvv", "pdv", "cpbh", "tdbh"}
+
+
+def is_dmx(path):
+    """File chi tiết theo mẫu ĐMX: có sheet biên bản ghi "phải thanh toán cho PVID" mà tên là tên
+    một sheet khác cộng số thứ tự ("ADLD 2", "1D1 - 1"). Chỉ dò dòng chữ thì nhầm: sheet BBDS của
+    file FUSE cũng có câu đó."""
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        names = [s.strip() for s in wb.sheetnames]
+        for ws in wb.worksheets:
+            m = re.match(r"^(.*?)\s*-?\s*\d+$", ws.title.strip())
+            if not m or m.group(1) not in names or m.group(1) == ws.title.strip():
+                continue
+            for row in ws.iter_rows(min_row=1, max_row=45, max_col=3, values_only=True):
+                if any(isinstance(v, str) and DMX_PAY in plain(v) for v in row):
+                    return True
+    finally:
+        wb.close()
+    return False
+
+
+def _pct_in(text):
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*%", text or "")
+    return Decimal(m.group(1).replace(",", ".")) / 100 if m else None
+
+
+def dmx_summary(wf, wv, name):
+    """Đọc sheet biên bản tổng hợp của một sheet chi tiết.
+
+    Trả về {"sheet", "base" (ô + giá trị tổng phí chưa VAT), "lines" [(phí chưa VAT, tỷ lệ pdv)],
+    "items" {3|4|5: {"cell", "row", "col", "value", "vat"}}, "period"} hoặc None.
+    """
+    pat = re.compile(r"^%s\s*-?\s*\d+$" % re.escape(name.strip()), re.I)
+    for title in wf.sheetnames:
+        if not pat.match(title.strip()):
+            continue
+        ws, wsv = wf[title], wv[title]
+        texts = {}
+        for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60)):
+            for c in row:
+                if isinstance(c.value, str) and not c.value.startswith("="):
+                    texts[(c.row, c.column)] = c.value
+        if not any(DMX_PAY in plain(t) for t in texts.values()):
+            continue
+        head = net_col = rate_col = None
+        head_rate = None
+        for (r, col), t in sorted(texts.items()):
+            p = plain(t)
+            if "giaban" in p and "chuabaogomvat" in p and head is None:
+                head, net_col = r, col
+        if head is None:
+            raise ToolError("Sheet %r: no column 'Giá bán ... (chưa bao gồm VAT)' found." % title)
+        for (r, col), t in texts.items():
+            p = plain(t)
+            if r == head and "tyle" in p and "phidichvu" in p:
+                rate_col = col
+            elif r == head and "phidichvu" in p and _pct_in(t) is not None:
+                head_rate = _pct_in(t)
+        total = next((r for r in range(head + 1, head + 40)
+                      if any(plain(texts.get((r, k), "")).startswith("tongcong") for k in (1, 2))), None)
+        if total is None:
+            raise ToolError("Sheet %r: no 'Tổng cộng' row under the table." % title)
+        lines = []
+        for r in range(head + 1, total):
+            net = dec(wsv.cell(row=r, column=net_col).value)
+            if net is None or not isinstance(wsv.cell(row=r, column=net_col).value, (int, float)):
+                continue
+            rate = dec(wsv.cell(row=r, column=rate_col).value) if rate_col else head_rate
+            lines.append((net, rate))
+        base_cell = ws.cell(row=total, column=net_col)
+        base = dec(wsv.cell(row=total, column=net_col).value)
+        if base is None:
+            base = sum((n for n, _ in lines), Decimal(0))
+        items = {}
+        for r in range(total + 1, min(ws.max_row, total + 20) + 1):
+            t = txt(ws.cell(row=r, column=1).value)
+            m = re.match(r"\((\d)\)", t)
+            if not m or DMX_PAY in plain(t) or int(m.group(1)) not in (3, 4, 5):
+                continue
+            col = next((k for k in range(2, 12) if ws.cell(row=r, column=k).value is not None
+                        and not isinstance(ws.cell(row=r, column=k), MergedCell)), None)
+            if col is None:
+                continue
+            items[int(m.group(1))] = {"row": r, "col": col, "value": dec(wsv.cell(row=r, column=col).value),
+                                      "vat": _pct_in(re.search(r"\d+\s*%\s*VAT", t).group(0))
+                                      if re.search(r"\d+\s*%\s*VAT", t) else Decimal("0.08")}
+        period = next((txt(wsv.cell(row=r, column=c + 1).value) for (r, c), t in texts.items()
+                       if plain(t).startswith("tungay")), "")
+        return {"sheet": title, "base_ref": "%s!$%s$%d" % (_sheet_ref(title), base_cell.column_letter, total),
+                "base": base, "lines": lines, "items": items, "period": period}
+    return None
+
+
+def _net_ref(ws, it):
+    """Ô giá trị chưa VAT của mục (3)/(4)/(5): dùng ô phụ kế bên (=E19/1.08), chưa có thì thêm vào."""
+    val = ws.cell(row=it["row"], column=it["col"])
+    nxt = ws.cell(row=it["row"], column=it["col"] + 1)
+    div = num_lit(1 + it["vat"])
+    if nxt.value is None and not isinstance(nxt, MergedCell):
+        nxt.value = "=%s/%s" % (val.coordinate, div)
+        nxt.number_format = val.number_format
+        nxt.font = copy(val.font)
+        return "%s!$%s$%d" % (_sheet_ref(ws.title), nxt.column_letter, nxt.row)
+    if isinstance(nxt.value, str) and nxt.value.replace(" ", "").upper() == "=%s/%s" % (val.coordinate, div):
+        return "%s!$%s$%d" % (_sheet_ref(ws.title), nxt.column_letter, nxt.row)
+    return "%s!$%s$%d/%s" % (_sheet_ref(ws.title), val.column_letter, val.row, div)
+
+
+def spread_exact(rows, exact, target):
+    """Làm tròn từng dòng rồi rải phần dư cho tổng bằng target. Trả về {id(dòng): (số, chênh)}."""
+    base = {id(r): r0(v) for r, v in zip(rows, exact)}
+    out = dict(base)
+    residual = target - sum(out.values())
+    if residual and rows:
+        step = 1 if residual > 0 else -1
+        order = sorted(zip(rows, exact), key=lambda t: (t[1] - int(t[1])), reverse=residual > 0)
+        each, rest = divmod(abs(residual), len(order))          # chia đều trước, phần lẻ rải 1 đồng
+        for k, (r, _v) in enumerate(order):
+            out[id(r)] += step * (each + (1 if k < rest else 0))
+    return {i: (out[i], out[i] - base[i]) for i in out}
+
+
+def dmx_rate_by_sp(sh, lines):
+    """{mã sp: tỷ lệ pdv} khi gán được mỗi mã sp vào đúng một tỷ lệ của biên bản, không thì None.
+
+    Biên bản ADLD PLUS có 2 nhóm (Gia dụng CE 45%, ICT 40%), sheet chi tiết không ghi nhóm nhưng
+    mỗi nhóm một mã sp, nên ghép theo tổng phí. Biên bản 1D1 có 3 nhóm mà chỉ một mã sp: không ghép
+    được, PDV chia theo tỷ lệ doanh thu như kế toán đang làm.
+    """
+    rates = sorted({r for _n, r in lines if r is not None})
+    if not rates:
+        return None
+    sps = defaultdict(lambda: [Decimal(0), 0])
+    for r in sh.rows:
+        sps[r["sp"]][0] += r["phi"]
+        sps[r["sp"]][1] += 1
+    if len(rates) == 1:
+        return {sp: rates[0] for sp in sps}
+    names = sorted(sps)
+    if len(names) > 6:
+        return None
+    want = defaultdict(Decimal)
+    for n, r in lines:
+        want[r] += n
+    for combo in itertools.product(rates, repeat=len(names)):
+        got = defaultdict(lambda: [Decimal(0), 0])
+        for sp, rt in zip(names, combo):
+            got[rt][0] += sps[sp][0]
+            got[rt][1] += sps[sp][1]
+        if all(abs(got[rt][0] - want[rt]) <= Decimal(got[rt][1]) / 2 + 1 for rt in rates):
+            return dict(zip(names, combo))
+    return None
+
+
+def dmx_default_chot(period, sheets):
+    """Ngày chốt mặc định của mẫu ĐMX: ngày 30 của tháng sau tháng dữ liệu (file mẫu T07 dùng 30/08)."""
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", period or "")
+    if m:
+        d = dt.date(int(m.group(3)), int(m.group(2)), 1)
+    else:
+        days = sorted(r["ngay_cap"] for sh in sheets for r in sh.rows if r["ngay_cap"])
+        d = days[0] if days else dt.date.today()
+    end = month_end(dt.date(d.year + (d.month == 12), d.month % 12 + 1, 1))
+    return end.replace(day=min(30, end.day))
+
+
+def dmx_check(path, sheets):
+    """Kiểm file ĐMX TRƯỚC khi đọc sổ 5111 (sổ mất 20 giây): chưa bị xử lý, mỗi sheet chi tiết có
+    biên bản, biên bản có số đã tính. Trả về chuỗi kỳ "01/07/2026 - 31/07/2026"."""
+    for sh in sheets:
+        if DMX_DONE & {plain(h) for h in sh.header}:
+            raise ToolError("Sheet %r already has the mvv / PDV columns. Use the file exactly as ĐMX "
+                            "sent it." % sh.name)
+    wf = openpyxl.load_workbook(path)
+    wv = openpyxl.load_workbook(path, data_only=True)
+    period = ""
+    try:
+        for sh in sheets:
+            s = dmx_summary(wf, wv, sh.name)
+            if s is None:
+                raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s 1' "
+                                "with the line 'phải thanh toán cho PVID')." % (sh.name, sh.name))
+            if 3 not in s["items"]:
+                raise ToolError("Sheet %r: line (3) Phí dịch vụ not found." % s["sheet"])
+            # file lưu bằng tool khác (không phải Excel) thì ô công thức không có số: dừng, đừng ra 0
+            if not s["lines"] or any(it["value"] is None for it in s["items"].values()):
+                raise ToolError("Sheet %r has formulas without calculated values. Open the ĐMX file in "
+                                "Excel, save it, then run again." % s["sheet"])
+            period = period or s["period"]
+    finally:
+        wf.close()
+        wv.close()
+    return period
+
+
+def _ext_link_parts(z):
+    """Đường dẫn các part externalLink theo đúng thứ tự <externalReference> của workbook.xml."""
+    wbx = z.read("xl/workbook.xml").decode("utf-8")
+    rels = z.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+    tgt = {}
+    for m in re.finditer(r"<Relationship\b[^>]*>", rels):
+        tag = m.group(0)
+        i, t = re.search(r'\bId="([^"]+)"', tag), re.search(r'\bTarget="([^"]+)"', tag)
+        if i and t:
+            p = t.group(1).lstrip("/")
+            tgt[i.group(1)] = p if p.startswith("xl/") else "xl/" + p
+    return [tgt.get(m.group(1)) for m in re.finditer(r'<externalReference\b[^>]*r:id="([^"]+)"', wbx)]
+
+
+def restore_external_links(src, dst):
+    """openpyxl ghi lại liên kết ngoài bị hỏng (externalBook trỏ r:id="rId1" mà rels chỉ còn rId2),
+    Excel báo "Open method of Workbooks class failed". Chép nguyên part externalLink của file gốc
+    sang file ra, theo thứ tự tham chiếu (openpyxl đổi tên thành externalLink1..n)."""
+    import shutil
+    import zipfile
+    with zipfile.ZipFile(src) as zs, zipfile.ZipFile(dst) as zd:
+        a, b = _ext_link_parts(zs), _ext_link_parts(zd)
+        if not a or len(a) != len(b) or None in a or None in b:
+            return 0
+        rel = lambda p: "%s/_rels/%s.rels" % tuple(p.rsplit("/", 1))      # noqa: E731
+        swap = {}
+        for pa, pb in zip(a, b):
+            swap[pb] = zs.read(pa)
+            swap[rel(pb)] = zs.read(rel(pa)) if rel(pa) in zs.namelist() else None
+        tmp = dst + ".tmp"
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zo:
+            names = zd.namelist()
+            for n in names:
+                if n in swap:
+                    if swap[n] is not None:
+                        zo.writestr(n, swap[n])
+                else:
+                    zo.writestr(zd.getinfo(n), zd.read(n))
+            for n, data in swap.items():
+                if n not in names and data is not None:
+                    zo.writestr(n, data)
+    shutil.move(tmp, dst)
+    return len(a)
+
+
+def _num_len(v):
+    return len("{:,.0f}".format(abs(float(v)))) + 2
+
+
+def _fit_widths(ws, wsv, hr, last, upto, extra):
+    """Nới cột cho khỏi cắt chữ và khỏi ####: đo giá trị đã tính của file gốc (wsv) và độ dài ước
+    tính của cột mới (extra). Chỉ nới, không thu hẹp cột của file gốc. Chữ đậm và nút lọc cộng thêm."""
+    # đọc giá trị một lượt: gọi wsv.cell / wsv.max_column trong vòng lặp là quét lại cả sheet mỗi
+    # lần (file 4.300 dòng chạy hơn 10 phút)
+    grid = [list(r) for r in wsv.iter_rows(min_row=1, max_row=last, values_only=True)]
+    pct = {c: "%" in (ws.cell(row=hr + 1, column=c).number_format or "") for c in range(1, upto + 1)}
+    for c in range(1, upto + 1):
+        L = get_column_letter(c)
+        need = 0
+        h = txt(ws.cell(row=hr, column=c).value)
+        if h:
+            need = len(h) * 1.1 + (3 if ws.auto_filter.ref else 1)
+        for r in range(1, len(grid) + 1):
+            if r == hr:
+                continue
+            row = grid[r - 1]
+            v = row[c - 1] if c <= len(row) else None
+            if isinstance(v, (dt.datetime, dt.date)):
+                n = 10
+            elif isinstance(v, (int, float)) and not isinstance(v, bool):
+                n = 7 if pct[c] else _num_len(v)
+            elif isinstance(v, str) and not v.startswith("="):
+                n = len(v)
+            else:
+                n = 0
+            need = max(need, n * (1.25 if r < hr else 1.15))      # Barlow rộng hơn Times New Roman
+        need = max(need, extra.get(c, 0) * 1.15) + 1.5
+        cur = ws.column_dimensions[L].width or 8.43
+        ws.column_dimensions[L].width = round(min(max(cur, need), 48), 1)
+
+
+def _f(font, bold=False):
+    return Font(name=FONT, size=font.sz or 11, bold=bold)
+
+
+def _house_style(ws, hr, last, upto):
+    """Sheet chi tiết theo chuẩn Excel của anh Nam: Barlow, bỏ khung kẻ toàn bảng, chỉ gạch dưới
+    hàng tiêu đề, tắt gridline, đóng băng dưới tiêu đề. Giữ chữ đậm, màu chữ, nền cảnh báo."""
+    for row in ws.iter_rows(min_row=1, max_row=last, max_col=upto):
+        for c in row:
+            if isinstance(c, MergedCell):
+                continue
+            f = c.font
+            c.font = Font(name=FONT, size=f.sz or 11, bold=f.b, italic=f.i, color=f.color)
+            c.border = Border(bottom=LINE) if c.row == hr else Border()
+            if c.row == hr:
+                c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[hr].height = 20
+    ws.sheet_view.showGridLines = False
+    ws.freeze_panes = "A%d" % (hr + 1)
+
+
+def write_dmx_file(path, detail_path, sheets, chot, log=print):
+    """Mở chính file ĐMX gửi, thêm cột vào từng sheet chi tiết, giữ nguyên mọi thứ khác."""
+    wb = openpyxl.load_workbook(detail_path)
+    wv = openpyxl.load_workbook(detail_path, data_only=True)
+    totals = {"pdv": 0, "cpbh": 0, "tdbh": 0}
+    warn = []
+    for sh in sheets:
+        ws = wb[sh.name]
+        if DMX_DONE & {plain(h) for h in sh.header}:
+            raise ToolError("Sheet %r already has the mvv / PDV columns. Use the file exactly as ĐMX "
+                            "sent it." % sh.name)
+        summ = dmx_summary(wb, wv, sh.name)
+        if summ is None:
+            raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s 1' with "
+                            "the line 'phải thanh toán cho PVID')." % (sh.name, sh.name))
+        if 3 not in summ["items"]:
+            raise ToolError("Sheet %r: line (3) Phí dịch vụ not found." % summ["sheet"])
+        sws = wb[summ["sheet"]]
+        by_sp = dmx_rate_by_sp(sh, summ["lines"])
+        width = max(i for i, h in enumerate(sh.header, 1) if txt(h))
+        H = get_column_letter(sh.cols["phi"] + 1)
+        cuoi = sh.cols.get("ngay_cuoi")
+        D = get_column_letter(cuoi + 1) if cuoi is not None else None
+        names = ["mvv", "tỷ lệ", "PDV"] + (["CPBH"] if 4 in summ["items"] else []) \
+            + (["TĐBH"] if 5 in summ["items"] else []) + ["tk 13", "Đối trừ"]
+        col = {n: width + k for k, n in enumerate(names, 1)}
+        L = {n: get_column_letter(c) for n, c in col.items()}
+        hr = sh.head_row
+        first = min(r["xl_row"] for r in sh.rows)
+        last = max(r["xl_row"] for r in sh.rows)
+        hcell = ws.cell(row=hr, column=width)
+        money_fmt = ws.cell(row=first, column=sh.cols["phi"] + 1).number_format
+        dfont = ws.cell(row=first, column=sh.cols["phi"] + 1).font
+        for n, c in col.items():
+            ws.cell(row=hr, column=c, value=n).font = _f(hcell.font, True)
+
+        def put(r, n, v, fmt=None, bold=False):
+            """Ghi một ô cột mới; dòng dữ liệu mượn viền và căn dọc của bảng gốc cùng dòng."""
+            x = ws.cell(row=r, column=col[n], value=v)
+            x.font = _f(dfont, bold)
+            if fmt:
+                x.number_format = fmt
+            return x
+
+        # dòng 1: ngày chốt, tổng tỷ lệ, số tổng cần chia lấy từ biên bản
+        put(1, "mvv", chot, DATE, bold=True)
+        put(1, "tỷ lệ", "=SUBTOTAL(9,%s%d:%s%d)" % (L["tỷ lệ"], first, L["tỷ lệ"], last), "0.00%", True)
+        share_pdv = by_sp is None
+        pdv_ref = _net_ref(sws, summ["items"][3])
+        put(1, "PDV", ("=" + pdv_ref) if share_pdv else
+            "=SUBTOTAL(9,%s%d:%s%d)" % (L["PDV"], first, L["PDV"], last), money_fmt, True)
+        alloc = {}                                   # tên cột -> (ô tổng, giá trị tổng)
+        for n, k in (("CPBH", 4), ("TĐBH", 5)):
+            if n in col:
+                it = summ["items"][k]
+                put(1, n, "=" + _net_ref(sws, it), money_fmt, True)
+                alloc[n] = (it["value"] or Decimal(0)) / (1 + it["vat"])
+        if share_pdv:
+            it = summ["items"][3]
+            alloc["PDV"] = (it["value"] or Decimal(0)) / (1 + it["vat"])
+
+        base = summ["base"] or Decimal(1)
+        rows = sh.rows
+        vals = {}
+        for n, tot in alloc.items():
+            exact = [tot * r["phi"] / base for r in rows]
+            target = r0(tot)
+            # Phí các dòng chi tiết phải cộng ra đúng ô tổng của biên bản. Lệch quá số dòng thì không
+            # ép về tổng biên bản (sẽ phải rải hàng triệu đồng), chỉ rải dư trên chính các dòng.
+            if abs(sum(exact) - tot) > len(rows):
+                target = r0(sum(exact))
+                warn.append("Sheet %r: premium in the rows (%s) does not match the summary total %s in %r, "
+                            "%s is split on the rows' share only." % (
+                                sh.name, f"{float(sum(r['phi'] for r in rows)):,.0f}", f"{float(base):,.0f}",
+                                summ["sheet"], n))
+            vals[n] = spread_exact(rows, exact, target)
+        if not share_pdv:
+            vals["PDV"] = {}
+            for sp in sorted(by_sp):
+                grp = [r for r in rows if r["sp"] == sp]
+                exact = [r["phi"] * by_sp[sp] for r in grp]
+                vals["PDV"].update(spread_exact(grp, exact, r0(sum(exact))))
+
+        for r in rows:
+            i = r["xl_row"]
+            if D:
+                x = put(i, "mvv", '=IF(%s%d<=$%s$1,0,DATEDIF($%s$1,%s%d,"m"))'
+                        % (D, i, L["mvv"], L["mvv"], D, i))
+                x.alignment = Alignment(horizontal="center", vertical="center")
+            put(i, "tỷ lệ", "=%s%d/%s" % (H, i, summ["base_ref"]), "0.00%")
+            for n in ("PDV", "CPBH", "TĐBH"):
+                if n not in col:
+                    continue
+                _v, adj = vals[n][id(r)]
+                a = ("%+d" % adj) if adj else ""
+                if n == "PDV" and not share_pdv:
+                    f = "=ROUND(%s%d*%s,0)%s" % (H, i, pct_lit(by_sp[r["sp"]]), a)
+                else:
+                    f = "=ROUND($%s$1*%s%d,0)%s" % (L[n], L["tỷ lệ"], i, a)
+                put(i, n, f, money_fmt)
+            x = put(i, "tk 13", r.get("tk_no") or "")
+            x.alignment = Alignment(horizontal="center", vertical="center")
+            if not r.get("in_ledger"):
+                st, fill = "Chưa có trong sổ", FILL_BAD
+            elif r.get("hd_lech_so"):
+                st, fill = "Hóa đơn khác sổ", FILL_BAD
+            else:
+                st, fill = "Khớp sổ", None
+            x = put(i, "Đối trừ", st)
+            if fill:
+                x.fill = fill
+        for n in ("PDV", "CPBH", "TĐBH"):
+            if n in vals:
+                totals[n.lower().replace("đ", "d")] += sum(v for v, _a in vals[n].values())
+
+        # bảng cộng theo mvv (kế toán dùng pivot, ở đây là SUMIFS cho tự tính lại)
+        sums = [n for n in ("PDV", "CPBH", "TĐBH") if n in col]
+        pc = width + len(names) + 2
+        sp_col = get_column_letter(sh.cols["ma_sp"] + 1)
+        multi = len({r["sp"] for r in rows}) > 1
+        hdrs = ["Mã sp / mvv" if multi else "mvv"] + ["Sum of %s" % n for n in sums]
+        for k, t in enumerate(hdrs):
+            x = ws.cell(row=hr, column=pc + k, value=t)
+            x.font = _f(hcell.font, True)
+            x.border = Border(bottom=LINE)
+            x.alignment = Alignment(horizontal="left" if k == 0 else "right")
+        rng = lambda c: "$%s$%d:$%s$%d" % (c, first, c, last)   # noqa: E731
+
+        def mvv_of(r):
+            d = as_date(sh.get(r["src"], "ngay_cuoi"))
+            return 0 if d is None or d <= chot else months_between(chot, d)
+        out_r = hr + 1
+        groups = sorted({r["sp"] for r in rows}) if multi else [None]
+        for g in groups:
+            sub = [r for r in rows if g is None or r["sp"] == g]
+            if g is not None:
+                ws.cell(row=out_r, column=pc, value=g).font = _f(dfont, True)
+                for k, n in enumerate(sums, 1):
+                    x = ws.cell(row=out_r, column=pc + k,
+                                value='=SUMIFS(%s,%s,"%s")' % (rng(L[n]), rng(sp_col), g))
+                    x.number_format, x.font = money_fmt, _f(dfont, True)
+                out_r += 1
+            for m in sorted({mvv_of(r) for r in sub}):
+                x = ws.cell(row=out_r, column=pc, value=m)
+                x.font, x.alignment = _f(dfont), Alignment(horizontal="left", indent=1 if g else 0)
+                for k, n in enumerate(sums, 1):
+                    cond = ',%s,"%s"' % (rng(sp_col), g) if g is not None else ""
+                    x = ws.cell(row=out_r, column=pc + k, value="=SUMIFS(%s,%s,%s%d%s)"
+                                % (rng(L[n]), rng(L["mvv"]), get_column_letter(pc), out_r, cond))
+                    x.number_format, x.font = money_fmt, _f(dfont)
+                out_r += 1
+        x = ws.cell(row=out_r, column=pc, value="Grand Total")
+        x.font, x.border = _f(dfont, True), Border(top=LINE)
+        for k, n in enumerate(sums, 1):
+            x = ws.cell(row=out_r, column=pc + k, value="=SUM(%s)" % rng(L[n]))
+            x.number_format, x.font = money_fmt, _f(dfont, True)
+            x.border = Border(top=LINE)
+
+        # bề rộng cột: cột gốc chỉ nới ra (tiêu đề bị cắt, dòng 1 hiện ####), cột mới nới theo số
+        big = {n: max([abs(v) for v, _a in vals[n].values()] + [abs(r0(alloc.get(n, 0)))]) for n in sums}
+        grand = {n: sum(abs(v) for v, _a in vals[n].values()) for n in sums}
+        extra = {col["mvv"]: 11, col["tỷ lệ"]: 8, col["tk 13"]: 7,
+                 col["Đối trừ"]: max(len(txt(ws.cell(row=r["xl_row"], column=col["Đối trừ"]).value)) for r in rows)}
+        for n in sums:
+            extra[col[n]] = _num_len(big[n]) + 1
+        extra[pc] = len(hdrs[0])
+        for k, n in enumerate(sums, 1):
+            extra[pc + k] = max(_num_len(grand[n]) + 1, len(hdrs[k]))
+        _house_style(ws, hr, last, col["Đối trừ"])
+        _fit_widths(ws, wv[sh.name], hr, last, pc + len(sums), extra)
+
+        if ws.auto_filter.ref:
+            ws.auto_filter.ref = "A%d:%s%d" % (hr, L["Đối trừ"], last)
+        log("Sheet %r: summary %r, PDV %s, %d rows" % (
+            sh.name, summ["sheet"], "by share of premium" if share_pdv else
+            ", ".join("%s %s" % (sp, pct_lit(v)) for sp, v in sorted(by_sp.items())), len(rows)))
+    wv.close()
+    wb.save(path)
+    for w in warn:
+        log("WARNING: " + w)
+    totals["warnings"] = warn
+    n = restore_external_links(detail_path, path)
+    if n:
+        log("External links kept as in the source file: %d" % n)
+    return path, totals
+
 
 # ----------------------------------------------------------------- chạy một lượt
 
@@ -1015,8 +1532,13 @@ def run(ledger_path, detail_path, out_dir, rates_file=None, chot=None, ky=None,
         log=print, progress=None):
     """Chạy đủ một lượt: áp bóc tách rồi đối trừ. Trả về dict kết quả cho trang web."""
     os.makedirs(out_dir, exist_ok=True)
-    rates, _rates_head = read_rates(rates_file)
-    log("Rates: %d product(s) in %s" % (len(rates), os.path.basename(rates_file or rates_path())))
+    dmx = is_dmx(detail_path)
+    if dmx:
+        log("Detail file layout: ĐMX (summary sheets sent by ĐMX, no BBDS template)")
+        rates = None
+    else:
+        rates, _rates_head = read_rates(rates_file)
+        log("Rates: %d product(s) in %s" % (len(rates), os.path.basename(rates_file or rates_path())))
 
     sheets = read_detail(detail_path, log=log)
     policies = {r["don"] for sh in sheets for r in sh.rows}
@@ -1025,14 +1547,24 @@ def run(ledger_path, detail_path, out_dir, rates_file=None, chot=None, ky=None,
     detail_agents = {r["dai_ly"] for sh in sheets for r in sh.rows if r["dai_ly"]}
     log("Detail: %d rows, %d policies, %d invoice number(s)" % (det_rows, len(policies), len(invoices)))
 
+    dmx_period = dmx_check(detail_path, sheets) if dmx else ""
     per_key, inv_rows, meta = read_ledger(ledger_path, policies, invoices, log=log, progress=progress)
-    chot = chot or month_end(meta["max_ngay_ctu"] or dt.date.today())
     ky_text, thang, nam = period_text(sheets)
+    if dmx:
+        ky_text = dmx_period or ky_text
+        chot = chot or dmx_default_chot(ky_text, sheets)
+    else:
+        chot = chot or month_end(meta["max_ngay_ctu"] or dt.date.today())
     info = {"ky": ky or ky_text, "thang": thang, "nam": nam, "chot": chot,
             "detail_name": os.path.basename(detail_path), "ledger_name": os.path.basename(ledger_path),
-            "det_rows": det_rows, "det_sheets": len(sheets), "led_rows": meta["rows"]}
+            "det_rows": det_rows, "det_sheets": len(sheets), "led_rows": meta["rows"],
+            "mode": "dmx" if dmx else "bbds"}
+    log("Cut-off date for mvv: %s" % chot.strftime("%d/%m/%Y"))
 
-    apply_rates(sheets, per_key, rates, chot, log=log)
+    if dmx:
+        attach_ledger(sheets, per_key, chot)
+    else:
+        apply_rates(sheets, per_key, rates, chot, log=log)
 
     res = offset(sheets, per_key, inv_rows, detail_agents, meta["by_ctu"], log=log)
 
@@ -1047,10 +1579,14 @@ def run(ledger_path, detail_path, out_dir, rates_file=None, chot=None, ky=None,
         res = offset(sheets, per_key, inv_rows, detail_agents, meta["by_ctu"], log=lambda *_a: None)
 
     stamp = dt.date.today().strftime("%Y%m%d")
-    p_det = write_detail_file(os.path.join(out_dir, "Detail_Applied_%s.xlsx" % stamp),
-                              sheets, rates, info, res, log=log)
-    applied = {"hh": sum(r["hh"] for sh in sheets for r in sh.rows),
-               "pdv": sum(r["pdv"] for sh in sheets for r in sh.rows)}
+    if dmx:
+        p_det, applied = write_dmx_file(os.path.join(out_dir, "Detail_Applied_%s.xlsx" % stamp),
+                                        detail_path, sheets, chot, log=log)
+    else:
+        p_det = write_detail_file(os.path.join(out_dir, "Detail_Applied_%s.xlsx" % stamp),
+                                  sheets, rates, info, res, log=log)
+        applied = {"hh": sum(r["hh"] for sh in sheets for r in sh.rows),
+                   "pdv": sum(r["pdv"] for sh in sheets for r in sh.rows)}
     p_off = write_offset_file(os.path.join(out_dir, "Offset_5111_%s.xlsx" % stamp), res, info, applied)
     log("Written: %s" % os.path.basename(p_det))
     log("Written: %s" % os.path.basename(p_off))
@@ -1071,6 +1607,7 @@ def run(ledger_path, detail_path, out_dir, rates_file=None, chot=None, ky=None,
         "bad_invoices": [{"hd": r["hd"], "phi_det": float(r["phi_det"]), "phi_led": float(r["phi_led"]),
                           "lech": float(r["phi_led"] - r["phi_det"])} for r in bad_inv],
         "rows": det_rows, "led_rows": meta["rows"],
+        "warnings": list((applied or {}).get("warnings") or []),
     }
 
 
