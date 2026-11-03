@@ -458,7 +458,7 @@ def has_offset():
     return O is not None
 
 
-def offset_run(ledger, detail, chot=None, ky=None, on_wait=None, on_start=None, progress=None):
+def offset_run(ledger, detail, chot=None, ky=None, on_wait=None, on_start=None, progress=None, partner=None):
     """ledger, detail = (ten, bytes). Ap boc tach roi doi tru, tra ve dict cho trang web.
 
     Anh Nam 2026-10-14: trang co HAI o tai file rieng, KHONG do loai file nua (mo header cua so
@@ -482,7 +482,7 @@ def offset_run(ledger, detail, chot=None, ky=None, on_wait=None, on_start=None, 
         inp, out = os.path.join(run, "input"), os.path.join(run, "output")
         p_led, p_det = save_files([ledger], inp)[0], save_files([detail], inp)[0]
         try:
-            res = O.run(p_led, p_det, out, chot=chot, ky=ky, log=say, progress=progress)
+            res = O.run(p_led, p_det, out, chot=chot, ky=ky, log=say, progress=progress, partner=partner)
         except O.ToolError as e:
             raise RunError(str(e)) from None
         finally:

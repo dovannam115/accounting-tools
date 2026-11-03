@@ -1,3 +1,6 @@
+v1.1.1 (03/11/2026)
+- Offset 5111: choose the partner (FUSE or TGDĐ) before running. The choice is remembered. Picking the wrong partner for the detail file stops at once with a clear message. With TGDĐ the BBDS payment period box is hidden (not used).
+
 v1.1.0 (03/11/2026)
 - Offset 5111 now also takes the ĐMX (TGDĐ) detail file as ĐMX sends it. The tool keeps the file and adds mvv, tỷ lệ, PDV, CPBH, TĐBH, tk 13 and the offset status to each detail sheet, plus a sum by mvv. Totals come from the summary sheets (lines (3), (4), (5)).
 - Cut-off date for the ĐMX file defaults to the 30th of the month after the data month. Set it by hand under Period if needed.

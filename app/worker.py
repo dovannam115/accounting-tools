@@ -171,6 +171,7 @@ def run_offset(a):
     say("Reading the ledger and the detail file ...")
     try:
         res = R.offset_run(led, det, chot=day(a.get("chot")), ky=(a.get("ky") or "").strip() or None,
+                           partner=a.get("partner") or None,
                            progress=lambda n: prog(0, 0, "Reading the ledger, %s rows" % format(n, ",").replace(",", ".")))
     except R.RunError as e:
         raise UserError(str(e))

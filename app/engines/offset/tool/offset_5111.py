@@ -1528,11 +1528,20 @@ def period_text(sheets):
             a.strftime("%m/%Y"), str(b.year))
 
 
+PARTNERS = {"fuse": "FUSE", "tgdd": "TGDĐ"}
+
+
 def run(ledger_path, detail_path, out_dir, rates_file=None, chot=None, ky=None,
-        log=print, progress=None):
+        log=print, progress=None, partner=None):
     """Chạy đủ một lượt: áp bóc tách rồi đối trừ. Trả về dict kết quả cho trang web."""
     os.makedirs(out_dir, exist_ok=True)
     dmx = is_dmx(detail_path)
+    # partner: đối tác người dùng chọn trên app ("fuse" | "tgdd"); None = tự nhận theo file
+    if partner == "tgdd" and not dmx:
+        raise ToolError("This detail file is not the TGDĐ layout (no summary sheet like 'ADLD 2' with the "
+                        "line 'phải thanh toán cho PVID'). Choose FUSE, or check the file.")
+    if partner == "fuse" and dmx:
+        raise ToolError("This detail file is the TGDĐ layout. Choose TGDĐ.")
     if dmx:
         log("Detail file layout: ĐMX (summary sheets sent by ĐMX, no BBDS template)")
         rates = None

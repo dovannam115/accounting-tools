@@ -345,6 +345,10 @@ const VI = {
   "Add the 5111 ledger and the detail file, then Run the offset.": "Thêm sổ 5111 và file chi tiết đơn rồi bấm Chạy đối trừ.",
   "Ledger 5111": "Sổ 5111", "Detail file": "File chi tiết đơn", "Period": "Kỳ", "Cut-off date": "Ngày chốt",
   "Payment period on the BBDS sheet": "Kỳ thanh toán in trên BBDS", "Run the offset": "Chạy đối trừ",
+  "Partner": "Đối tác", "Choose the partner first.": "Chọn đối tác trước.",
+  "Empty = the 30th of the month after the data month.": "Để trống = ngày 30 của tháng sau tháng dữ liệu.",
+  "This detail file is the TGDĐ layout. Choose TGDĐ.": "File chi tiết này là mẫu TGDĐ. Chọn đối tác TGDĐ.",
+  "This detail file is not the TGDĐ layout (no summary sheet like 'ADLD 2' with the line 'phải thanh toán cho PVID'). Choose FUSE, or check the file.": "File chi tiết này không phải mẫu TGDĐ (không có sheet biên bản kiểu 'ADLD 2' với dòng 'phải thanh toán cho PVID'). Chọn FUSE, hoặc kiểm tra lại file.",
   "Empty = from the files.": "Để trống thì lấy theo file.",
   "Invoices off": "Hóa đơn lệch", "Policy keys off": "Khoá đơn lệch", "Premium not in the ledger": "Phí chưa có trong sổ",
   "Invoice": "Hóa đơn", "Detail": "Chi tiết", "Ledger": "Sổ 5111", "Difference": "Lệch",
@@ -769,15 +773,22 @@ EXTRA.pias = (r) => r.console ? '<div class="no" style="margin-top:16px">What th
 
 // ---- Offset with the 5111 ledger (kept short on purpose: two files, the period, one button)
 EMPTY.offset = "Add the 5111 ledger and the detail file, then Run the offset.";
+const OFF_PARTNERS = [["fuse", "FUSE"], ["tgdd", "TGDĐ"]];
 VIEWS.offset = () => {
   const s = st("offset");
-  const can = ready("offset", "ledger") && ready("offset", "detail") && !busyT("offset");
-  return '<div class="cols"><div class="card"><div class="no">Ledger 5111</div>' + field("offset", "ledger", ".xlsx,.xlsm", false) +
+  if(s.partner === undefined){ try { s.partner = localStorage.getItem("acct_off_partner") || ""; } catch(e){ s.partner = ""; } }
+  const tgdd = s.partner === "tgdd";
+  const can = !!s.partner && ready("offset", "ledger") && ready("offset", "detail") && !busyT("offset");
+  return '<div class="cols"><div class="card"><div class="no">Partner</div>' +
+    seg("offset", "partner", OFF_PARTNERS, "try{localStorage.setItem(\'acct_off_partner\',S.offset.partner)}catch(e){};") +
+    (s.partner ? "" : '<div class="hint">Choose the partner first.</div>') +
+    '<div class="no">Ledger 5111</div>' + field("offset", "ledger", ".xlsx,.xlsm", false) +
     '<div class="no">Detail file</div>' + field("offset", "detail", ".xlsx,.xlsm", false) +
     det("off-per", "Period", '<div style="display:flex;gap:8px;margin-top:8px">' + dateBox("offset", "chot", "Cut-off date") + '<div style="flex:1"></div></div>' +
+      (tgdd ? '<div class="hint">Empty = the 30th of the month after the data month.</div>' :
       '<div class="hint" style="margin:10px 0 4px">Payment period on the BBDS sheet</div><input class="inp" value="' + esc(s.ky || "") +
-      '" placeholder="Từ ngày 01/08/2026 đến ngày 31/08/2026" oninput="S.offset.ky=this.value"><div class="hint">Empty = from the files.</div>') +
-    '<div class="act"><button class="btn pri" ' + (can ? "" : "disabled") + ' onclick="run(\'offset\',{ledger:ids(\'offset\',\'ledger\')[0],detail:ids(\'offset\',\'detail\')[0],chot:S.offset.chot||\'\',ky:S.offset.ky||\'\'},\'Offset with the 5111 ledger\')">Run the offset</button></div>' +
+      '" placeholder="Từ ngày 01/08/2026 đến ngày 31/08/2026" oninput="S.offset.ky=this.value"><div class="hint">Empty = from the files.</div>')) +
+    '<div class="act"><button class="btn pri" ' + (can ? "" : "disabled") + ' onclick="run(\'offset\',{partner:S.offset.partner,ledger:ids(\'offset\',\'ledger\')[0],detail:ids(\'offset\',\'detail\')[0],chot:S.offset.chot||\'\',ky:S.offset.partner===\'tgdd\'?\'\':(S.offset.ky||\'\')},\'Offset with the 5111 ledger\')">Run the offset</button></div>' +
     '</div><div class="card" id="run-offset"></div></div>';
 };
 
