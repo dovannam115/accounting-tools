@@ -1,3 +1,8 @@
+v1.1.2 (09/11/2026)
+- Offset 5111, TGDĐ: also reads the layout used from T09/2026 (detail sheets named "Chi tiết đơn BHMR", summary sheets "BHMR-1", premium column "Nguyên tệ", payment line "Thanh toán NCC"). Both layouts work.
+- New products in that layout (BHRV, MDM, BHNC) are handled like the others. Line (6) of the MDM summary (agent support, VAT 10%) gets its own column HTĐL, split by share of premium like CPBH and TĐBH.
+- When a summary line does not state its VAT, the tool reads it from the Thuế suất column of the matching cost sheet.
+
 v1.1.1 (03/11/2026)
 - Offset 5111: choose the partner (FUSE or TGDĐ) before running. The choice is remembered. Picking the wrong partner for the detail file stops at once with a clear message. With TGDĐ the BBDS payment period box is hidden (not used).
 

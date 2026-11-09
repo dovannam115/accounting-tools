@@ -172,13 +172,13 @@ LEDGER_NEED = ("so_ctu", "so_don", "ma_sp", "phi")
 DETAIL_NAMES = {
     "so_don": ["Số đơn BH", "Số đơn Bh", "Số đơn BH/SĐBS"],
     "ma_sp": ["Mã sp"],
-    "phi": ["Nguyên tệ phí", "Nguyên tệ(Phí)", "Phí bh - vat"],
+    "phi": ["Nguyên tệ phí", "Nguyên tệ(Phí)", "Phí bh - vat", "Nguyên tệ"],
     "hoa_don": ["Hóa đơn", "Hoá đơn"],
     "dai_ly": ["Mã Đại lý", "Đại lý"],
     "ngay_cap": ["Ngày cấp đơn"],
     "ngay_cuoi": ["Ngày cuối", "ngày cuối"],
     "seri": ["Số seri"],
-    "phi_vat": ["Số tiền phí", "Phí BH + Vat"],
+    "phi_vat": ["Số tiền phí", "Phí BH + Vat", "Phí bảo hiểm(VNĐ)"],
 }
 DETAIL_NEED = ("so_don", "ma_sp", "phi")
 
@@ -737,11 +737,9 @@ def write_offset_file(path, res, info, applied=None):
         ("Khoá đơn và sản phẩm", "=COUNTA('Theo đơn'!A2:A%d)" % max(end2, 2), None),
         ("Khoá chưa có trong sổ", "=COUNTA('Thiếu trong sổ'!A2:A%d)" % max(end3, 2), "Phí: xem sheet Thiếu trong sổ"),
         ("Phí chưa có trong sổ", "='Thiếu trong sổ'!E%d" % (end3 + 1), None),
-    ] + ([
-        ("PDV chưa VAT (chi tiết đã áp)", (applied or {}).get("pdv"), "Tổng cột PDV các sheet chi tiết"),
-        ("CPBH chưa VAT (chi tiết đã áp)", (applied or {}).get("cpbh"), "Mục (4) của biên bản, chia theo tỷ lệ doanh thu"),
-        ("TĐBH chưa VAT (chi tiết đã áp)", (applied or {}).get("tdbh"), "Mục (5) của biên bản, chia theo tỷ lệ doanh thu"),
-    ] if info.get("mode") == "dmx" else [
+    ] + ([("%s chưa VAT (chi tiết đã áp)" % n, v, None)
+          for n, v in ((applied or {}).get("cols") or {}).items()]
+         if info.get("mode") == "dmx" else [
         ("Hoa hồng đại lý (chi tiết đã áp)", (applied or {}).get("hh"),
          "Bằng ô Hoa hồng đại lý của BBDS trong file chi tiết đã áp"),
         ("Phí dịch vụ chưa VAT (chi tiết đã áp)", (applied or {}).get("pdv"),
@@ -1030,22 +1028,50 @@ def write_detail_file(path, sheets, rates, info, res, log=print):
 # "Tổng số tiền phí bảo hiểm phải thanh toán cho PVID".
 
 DMX_PAY = "phaithanhtoanchopvid"
-DMX_DONE = {"mvv", "pdv", "cpbh", "tdbh"}
+DMX_DONE = {"mvv", "pdv", "cpbh", "tdbh", "htdl"}
+# mục (n) của biên bản -> tên cột chia theo tỷ lệ doanh thu. (6) chỉ có ở mẫu của Linh (MDM, T09/2026):
+# "Hỗ trợ đại lý bảo hiểm cho các chương trình 1 đổi 1", VAT 10%.
+ITEM_COL = {4: "CPBH", 5: "TĐBH", 6: "HTĐL"}
+
+
+def _item_col(k):
+    return ITEM_COL.get(k, "CP(%d)" % k)
+
+
+def _dmx_base(name):
+    """Tên gốc của sheet chi tiết: mẫu Thanh là "BHMR", mẫu Linh là "Chi tiết đơn BHMR"."""
+    n = unicodedata.normalize("NFC", str(name)).strip()
+    return re.sub(r"^chi\s*ti[eế]t\s*đ[oơ]n\s+", "", n, flags=re.I).strip()
+
+
+def _is_pay_line(t):
+    """Dòng thanh toán cuối biên bản: "(6)=(1)-(2)-...: Tổng số tiền ... phải thanh toán cho PVID" (mẫu
+    Thanh) hay "(7)=(1)-(2)-...: Thanh toán NCC" (mẫu Linh, MDM và BHNC)."""
+    t = str(t or "")
+    return (DMX_PAY in plain(t) or "thanhtoanncc" in plain(t)
+            or re.match(r"^\s*\(\d\)\s*=\s*\(1\)\s*-\s*\(2\)", t) is not None)
+
+
+def _summary_titles(sheetnames, name):
+    """Các sheet biên bản đi kèm sheet chi tiết: "BHMR -1 ", "BHMR-2", "1D1 - 1", "ADLD 2"..."""
+    pat = re.compile(r"^%s\s*-?\s*\d+$" % re.escape(_dmx_base(name)), re.I)
+    return [t for t in sheetnames if pat.match(unicodedata.normalize("NFC", t).strip())]
 
 
 def is_dmx(path):
-    """File chi tiết theo mẫu ĐMX: có sheet biên bản ghi "phải thanh toán cho PVID" mà tên là tên
-    một sheet khác cộng số thứ tự ("ADLD 2", "1D1 - 1"). Chỉ dò dòng chữ thì nhầm: sheet BBDS của
-    file FUSE cũng có câu đó."""
+    """File chi tiết theo mẫu ĐMX: có sheet biên bản (có dòng thanh toán) mà tên là tên gốc của một
+    sheet chi tiết cộng số thứ tự ("ADLD 2" cạnh "ADLD", "BHMR -1 " cạnh "Chi tiết đơn BHMR"). Chỉ dò
+    dòng chữ thì nhầm: sheet BBDS của file FUSE cũng có câu "phải thanh toán cho PVID"."""
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
-        names = [s.strip() for s in wb.sheetnames]
+        bases = {_dmx_base(s).lower() for s in wb.sheetnames}
         for ws in wb.worksheets:
-            m = re.match(r"^(.*?)\s*-?\s*\d+$", ws.title.strip())
-            if not m or m.group(1) not in names or m.group(1) == ws.title.strip():
+            t = unicodedata.normalize("NFC", ws.title).strip()
+            m = re.match(r"^(.*?)\s*-?\s*\d+$", t)
+            if not m or m.group(1).strip().lower() not in bases or m.group(1).strip() == t:
                 continue
             for row in ws.iter_rows(min_row=1, max_row=45, max_col=3, values_only=True):
-                if any(isinstance(v, str) and DMX_PAY in plain(v) for v in row):
+                if any(isinstance(v, str) and _is_pay_line(v) for v in row):
                     return True
     finally:
         wb.close()
@@ -1063,23 +1089,21 @@ def dmx_summary(wf, wv, name):
     Trả về {"sheet", "base" (ô + giá trị tổng phí chưa VAT), "lines" [(phí chưa VAT, tỷ lệ pdv)],
     "items" {3|4|5: {"cell", "row", "col", "value", "vat"}}, "period"} hoặc None.
     """
-    pat = re.compile(r"^%s\s*-?\s*\d+$" % re.escape(name.strip()), re.I)
-    for title in wf.sheetnames:
-        if not pat.match(title.strip()):
-            continue
+    titles = _summary_titles(wf.sheetnames, name)
+    for title in titles:
         ws, wsv = wf[title], wv[title]
         texts = {}
         for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60)):
             for c in row:
                 if isinstance(c.value, str) and not c.value.startswith("="):
                     texts[(c.row, c.column)] = c.value
-        if not any(DMX_PAY in plain(t) for t in texts.values()):
+        if not any(_is_pay_line(t) for t in texts.values()):
             continue
         head = net_col = rate_col = None
         head_rate = None
         for (r, col), t in sorted(texts.items()):
             p = plain(t)
-            if "giaban" in p and "chuabaogomvat" in p and head is None:
+            if "giaban" in p and ("chuabaogomvat" in p or "chuavat" in p) and head is None:
                 head, net_col = r, col
         if head is None:
             raise ToolError("Sheet %r: no column 'Giá bán ... (chưa bao gồm VAT)' found." % title)
@@ -1108,19 +1132,41 @@ def dmx_summary(wf, wv, name):
         for r in range(total + 1, min(ws.max_row, total + 20) + 1):
             t = txt(ws.cell(row=r, column=1).value)
             m = re.match(r"\((\d)\)", t)
-            if not m or DMX_PAY in plain(t) or int(m.group(1)) not in (3, 4, 5):
+            if not m or _is_pay_line(t) or int(m.group(1)) < 3:
                 continue
             col = next((k for k in range(2, 12) if ws.cell(row=r, column=k).value is not None
                         and not isinstance(ws.cell(row=r, column=k), MergedCell)), None)
             if col is None:
                 continue
-            items[int(m.group(1))] = {"row": r, "col": col, "value": dec(wsv.cell(row=r, column=col).value),
-                                      "vat": _pct_in(re.search(r"\d+\s*%\s*VAT", t).group(0))
-                                      if re.search(r"\d+\s*%\s*VAT", t) else Decimal("0.08")}
+            value = dec(wsv.cell(row=r, column=col).value)
+            vat = (_pct_in(re.search(r"\d+\s*%\s*VAT", t).group(0)) if re.search(r"\d+\s*%\s*VAT", t)
+                   else _vat_from_sheets(wv, [x for x in titles if x != title], value))
+            items[int(m.group(1))] = {"row": r, "col": col, "value": value, "label": t,
+                                      "vat": vat if vat is not None else Decimal("0.08")}
         period = next((txt(wsv.cell(row=r, column=c + 1).value) for (r, c), t in texts.items()
                        if plain(t).startswith("tungay")), "")
         return {"sheet": title, "base_ref": "%s!$%s$%d" % (_sheet_ref(title), base_cell.column_letter, total),
                 "base": base, "lines": lines, "items": items, "period": period}
+    return None
+
+
+def _vat_from_sheets(wv, titles, value):
+    """VAT của một mục khi nhãn không ghi %: tìm sheet chi phí đi kèm có ô tổng bằng đúng số đó rồi đọc
+    cột "Thuế suất" (MDM-4: hỗ trợ đại lý 10%, các sheet NVBH / thi đua 8%)."""
+    if value is None:
+        return None
+    for t in titles:
+        ws = wv[t]
+        if not any(isinstance(v, (int, float)) and not isinstance(v, bool) and abs(Decimal(str(v)) - value) <= 1
+                   for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60), values_only=True) for v in row):
+            continue
+        for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 40)):
+            for c in row:
+                if isinstance(c.value, str) and "thuesuat" in plain(c.value):
+                    for r in range(c.row + 1, c.row + 10):
+                        v = ws.cell(row=r, column=c.column).value
+                        if isinstance(v, (int, float)) and 0 < v < 1:
+                            return Decimal(str(v))
     return None
 
 
@@ -1211,8 +1257,8 @@ def dmx_check(path, sheets):
         for sh in sheets:
             s = dmx_summary(wf, wv, sh.name)
             if s is None:
-                raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s 1' "
-                                "with the line 'phải thanh toán cho PVID')." % (sh.name, sh.name))
+                raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s-1' "
+                                "with the payment line at the bottom)." % (sh.name, _dmx_base(sh.name)))
             if 3 not in s["items"]:
                 raise ToolError("Sheet %r: line (3) Phí dịch vụ not found." % s["sheet"])
             # file lưu bằng tool khác (không phải Excel) thì ô công thức không có số: dừng, đừng ra 0
@@ -1332,7 +1378,7 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
     """Mở chính file ĐMX gửi, thêm cột vào từng sheet chi tiết, giữ nguyên mọi thứ khác."""
     wb = openpyxl.load_workbook(detail_path)
     wv = openpyxl.load_workbook(detail_path, data_only=True)
-    totals = {"pdv": 0, "cpbh": 0, "tdbh": 0}
+    totals = {"cols": {}}
     warn = []
     for sh in sheets:
         ws = wb[sh.name]
@@ -1341,8 +1387,8 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
                             "sent it." % sh.name)
         summ = dmx_summary(wb, wv, sh.name)
         if summ is None:
-            raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s 1' with "
-                            "the line 'phải thanh toán cho PVID')." % (sh.name, sh.name))
+            raise ToolError("Sheet %r has no summary sheet next to it (a sheet named like '%s-1' with "
+                            "the payment line at the bottom)." % (sh.name, _dmx_base(sh.name)))
         if 3 not in summ["items"]:
             raise ToolError("Sheet %r: line (3) Phí dịch vụ not found." % summ["sheet"])
         sws = wb[summ["sheet"]]
@@ -1351,8 +1397,9 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
         H = get_column_letter(sh.cols["phi"] + 1)
         cuoi = sh.cols.get("ngay_cuoi")
         D = get_column_letter(cuoi + 1) if cuoi is not None else None
-        names = ["mvv", "tỷ lệ", "PDV"] + (["CPBH"] if 4 in summ["items"] else []) \
-            + (["TĐBH"] if 5 in summ["items"] else []) + ["tk 13", "Đối trừ"]
+        extra_items = [(_item_col(k), k) for k in sorted(summ["items"]) if k >= 4]
+        money = ["PDV"] + [n for n, _k in extra_items]
+        names = ["mvv", "tỷ lệ"] + money + ["tk 13", "Đối trừ"]
         col = {n: width + k for k, n in enumerate(names, 1)}
         L = {n: get_column_letter(c) for n, c in col.items()}
         hr = sh.head_row
@@ -1380,11 +1427,10 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
         put(1, "PDV", ("=" + pdv_ref) if share_pdv else
             "=SUBTOTAL(9,%s%d:%s%d)" % (L["PDV"], first, L["PDV"], last), money_fmt, True)
         alloc = {}                                   # tên cột -> (ô tổng, giá trị tổng)
-        for n, k in (("CPBH", 4), ("TĐBH", 5)):
-            if n in col:
-                it = summ["items"][k]
-                put(1, n, "=" + _net_ref(sws, it), money_fmt, True)
-                alloc[n] = (it["value"] or Decimal(0)) / (1 + it["vat"])
+        for n, k in extra_items:
+            it = summ["items"][k]
+            put(1, n, "=" + _net_ref(sws, it), money_fmt, True)
+            alloc[n] = (it["value"] or Decimal(0)) / (1 + it["vat"])
         if share_pdv:
             it = summ["items"][3]
             alloc["PDV"] = (it["value"] or Decimal(0)) / (1 + it["vat"])
@@ -1418,9 +1464,7 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
                         % (D, i, L["mvv"], L["mvv"], D, i))
                 x.alignment = Alignment(horizontal="center", vertical="center")
             put(i, "tỷ lệ", "=%s%d/%s" % (H, i, summ["base_ref"]), "0.00%")
-            for n in ("PDV", "CPBH", "TĐBH"):
-                if n not in col:
-                    continue
+            for n in money:
                 _v, adj = vals[n][id(r)]
                 a = ("%+d" % adj) if adj else ""
                 if n == "PDV" and not share_pdv:
@@ -1439,12 +1483,11 @@ def write_dmx_file(path, detail_path, sheets, chot, log=print):
             x = put(i, "Đối trừ", st)
             if fill:
                 x.fill = fill
-        for n in ("PDV", "CPBH", "TĐBH"):
-            if n in vals:
-                totals[n.lower().replace("đ", "d")] += sum(v for v, _a in vals[n].values())
+        for n in money:
+            totals["cols"][n] = totals["cols"].get(n, 0) + sum(v for v, _a in vals[n].values())
 
         # bảng cộng theo mvv (kế toán dùng pivot, ở đây là SUMIFS cho tự tính lại)
-        sums = [n for n in ("PDV", "CPBH", "TĐBH") if n in col]
+        sums = list(money)
         pc = width + len(names) + 2
         sp_col = get_column_letter(sh.cols["ma_sp"] + 1)
         multi = len({r["sp"] for r in rows}) > 1
