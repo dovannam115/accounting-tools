@@ -1,3 +1,7 @@
+v1.1.7 (18/11/2026)
+- Icon mới: chú thỏ vẫy tay.
+- Icon shortcut ngoài Desktop và Start menu tự đổi theo icon app sau khi cập nhật, không cần khởi động lại máy.
+
 v1.1.6 (18/11/2026)
 - The update banner scrolls slower and easier to read, and it now shows on its own on open (the app re-checks fresh every time).
 
